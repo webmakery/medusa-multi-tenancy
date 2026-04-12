@@ -121,6 +121,31 @@ const products = await productService.list()
 
 ---
 
+## Tenant Onboarding API (MVP)
+
+You can now provision tenant records from an admin endpoint.
+
+### Create tenant
+
+```bash
+curl -X POST http://localhost:9000/admin/tenants \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Acme Store",
+    "owner_email": "owner@acme.com"
+  }'
+```
+
+### List tenants
+
+```bash
+curl http://localhost:9000/admin/tenants
+```
+
+This endpoint stores tenant records and returns an onboarding checklist for next setup actions.
+
+> Run `yarn medusa db:migrate` before using this endpoint to apply the tenant table migration.
+
 ## Quick Start
 
 ```bash
