@@ -159,3 +159,81 @@ export async function getOnboardingChecklist() {
     checklist,
   };
 }
+
+export interface OrderTimelineEvent {
+  id: string;
+  at: string;
+  type: string;
+  label: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface OrderTimelineResponse {
+  order_id: string;
+  events: OrderTimelineEvent[];
+}
+
+export async function getOrderTimeline(orderId: string) {
+  return apiRequest<OrderTimelineResponse>(`/orders/${orderId}/timeline`);
+}
+
+interface CreateAdminFulfillmentInput {
+  location_id: string;
+  items: Array<{
+    id: string;
+    quantity: number;
+  }>;
+  no_notification?: boolean;
+}
+
+export async function createAdminFulfillment(orderId: string, input: CreateAdminFulfillmentInput) {
+  return apiRequest<{ fulfillment: unknown }>(`/orders/${orderId}/fulfillments`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+interface UpdateAdminTrackingInput {
+  items: Array<{
+    id: string;
+    quantity: number;
+  }>;
+  labels: Array<{
+    tracking_number: string;
+    tracking_url: string;
+    label_url: string;
+  }>;
+  no_notification?: boolean;
+}
+
+export async function updateAdminTracking(orderId: string, fulfillmentId: string, input: UpdateAdminTrackingInput) {
+  return apiRequest<{ shipment: unknown }>(`/orders/${orderId}/fulfillments/${fulfillmentId}/tracking`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+interface CreateAdminRefundInput {
+  payment_id?: string;
+  amount: number;
+  note?: string;
+}
+
+export async function createAdminRefund(orderId: string, input: CreateAdminRefundInput) {
+  return apiRequest<{ refund: unknown }>(`/orders/${orderId}/refunds`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+interface RunReturnLifecycleInput {
+  action: 'begin' | 'request_items' | 'update';
+  payload: Record<string, unknown>;
+}
+
+export async function runReturnLifecycle(orderId: string, input: RunReturnLifecycleInput) {
+  return apiRequest<{ action: string; result: unknown }>(`/orders/${orderId}/returns`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
