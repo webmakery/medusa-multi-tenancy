@@ -1,4 +1,6 @@
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
+import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import type { Knex } from 'knex';
 
 import { TENANT_MANAGEMENT_MODULE } from '../../../modules/tenant-management';
 import TenantManagementModuleService from '../../../modules/tenant-management/service';
@@ -20,6 +22,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   const tenant = await tenantManagementService.retrieveTenant(tenantAccess.tenantId!);
   const members = await tenantManagementService.listTenantMembers(tenantAccess.tenantId!);
+  const knex = req.scope.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
+  const salesChannelCountResult = await knex('sales_channel')
+    .where({ tenant_id: tenantAccess.tenantId! })
+    .whereNull('deleted_at')
+    .count<{ count: string }[]>({ count: '*' })
+    .first();
+  const salesChannelCount = Number(salesChannelCountResult?.count || 0);
 
   const checklist: OnboardingChecklistItem[] = [
     {
@@ -35,7 +44,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     {
       key: 'add_sales_channel',
       label: 'Add sales channel',
-      is_completed: true,
+      is_completed: salesChannelCount > 0,
     },
     {
       key: 'review_launch_readiness',
