@@ -1,4 +1,5 @@
 import { defineRouteConfig } from '@medusajs/admin-sdk';
+import { Button, Container, Heading, Input, Label, Table, Text, Textarea } from '@medusajs/ui';
 import { FormEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -124,101 +125,159 @@ const OrderOperationsPage = () => {
   };
 
   return (
-    <div style={{ padding: '1.5rem', maxWidth: 900 }}>
-      <h1>{t('admin.orderOps.title')}</h1>
-      <p>{t('admin.orderOps.description')}</p>
+    <div className="flex flex-col gap-y-6 p-6">
+      <Container className="p-6">
+        <Heading level="h1">{t('admin.orderOps.title')}</Heading>
+        <Text size="small" className="text-ui-fg-subtle mt-2">
+          {t('admin.orderOps.description')}
+        </Text>
 
-      <label>
-        {t('admin.orderOps.fields.orderId')}
-        <input value={orderId} onChange={(event) => setOrderId(event.target.value)} />
-      </label>
-      <button type="button" onClick={loadTimeline} disabled={!orderId.trim()}>
-        {t('admin.orderOps.actions.loadTimeline')}
-      </button>
+        <div className="mt-4 flex items-end gap-3 max-w-xl">
+          <div className="flex-1 flex flex-col gap-y-2">
+            <Label htmlFor="order_id">{t('admin.orderOps.fields.orderId')}</Label>
+            <Input id="order_id" value={orderId} onChange={(event) => setOrderId(event.target.value)} />
+          </div>
+          <Button type="button" onClick={loadTimeline} disabled={!orderId.trim()}>
+            {t('admin.orderOps.actions.loadTimeline')}
+          </Button>
+        </div>
 
-      <h2>{t('admin.orderOps.sections.fulfillment')}</h2>
-      <form onSubmit={onCreateFulfillment}>
-        <input
-          placeholder={t('admin.orderOps.fields.locationId')}
-          value={locationId}
-          onChange={(event) => setLocationId(event.target.value)}
-        />
-        <input placeholder={t('admin.orderOps.fields.itemId')} value={itemId} onChange={(event) => setItemId(event.target.value)} />
-        <input
-          type="number"
-          min={1}
-          value={itemQuantity}
-          onChange={(event) => setItemQuantity(Number(event.target.value) || 1)}
-        />
-        <button type="submit">{t('admin.orderOps.actions.createFulfillment')}</button>
-      </form>
+        {message ? <Text className="mt-3 text-ui-fg-interactive">{message}</Text> : null}
+        {error ? <Text className="mt-2 text-ui-fg-error">{error}</Text> : null}
+      </Container>
 
-      <h2>{t('admin.orderOps.sections.tracking')}</h2>
-      <form onSubmit={onUpdateTracking}>
-        <input
-          placeholder={t('admin.orderOps.fields.fulfillmentId')}
-          value={fulfillmentId}
-          onChange={(event) => setFulfillmentId(event.target.value)}
-        />
-        <input
-          placeholder={t('admin.orderOps.fields.itemId')}
-          value={shipmentItemId}
-          onChange={(event) => setShipmentItemId(event.target.value)}
-        />
-        <input
-          type="number"
-          min={1}
-          value={shipmentItemQuantity}
-          onChange={(event) => setShipmentItemQuantity(Number(event.target.value) || 1)}
-        />
-        <input
-          placeholder={t('admin.orderOps.fields.trackingNumber')}
-          value={trackingNumber}
-          onChange={(event) => setTrackingNumber(event.target.value)}
-        />
-        <input
-          placeholder={t('admin.orderOps.fields.trackingUrl')}
-          value={trackingUrl}
-          onChange={(event) => setTrackingUrl(event.target.value)}
-        />
-        <button type="submit">{t('admin.orderOps.actions.updateTracking')}</button>
-      </form>
+      <Container className="p-6">
+        <Heading level="h2">{t('admin.orderOps.sections.fulfillment')}</Heading>
+        <form onSubmit={onCreateFulfillment} className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+          <div className="flex flex-col gap-y-2">
+            <Label htmlFor="location_id">{t('admin.orderOps.fields.locationId')}</Label>
+            <Input id="location_id" value={locationId} onChange={(event) => setLocationId(event.target.value)} />
+          </div>
+          <div className="flex flex-col gap-y-2">
+            <Label htmlFor="fulfillment_item_id">{t('admin.orderOps.fields.itemId')}</Label>
+            <Input id="fulfillment_item_id" value={itemId} onChange={(event) => setItemId(event.target.value)} />
+          </div>
+          <div className="flex flex-col gap-y-2">
+            <Label htmlFor="fulfillment_item_qty">Qty</Label>
+            <Input
+              id="fulfillment_item_qty"
+              type="number"
+              min={1}
+              value={itemQuantity}
+              onChange={(event) => setItemQuantity(Number(event.target.value) || 1)}
+            />
+          </div>
+          <div>
+            <Button type="submit">{t('admin.orderOps.actions.createFulfillment')}</Button>
+          </div>
+        </form>
+      </Container>
 
-      <h2>{t('admin.orderOps.sections.refund')}</h2>
-      <form onSubmit={onCreateRefund}>
-        <input
-          placeholder={t('admin.orderOps.fields.paymentId')}
-          value={paymentId}
-          onChange={(event) => setPaymentId(event.target.value)}
-        />
-        <input
-          type="number"
-          min={0}
-          value={refundAmount}
-          onChange={(event) => setRefundAmount(Number(event.target.value) || 0)}
-        />
-        <input placeholder={t('admin.orderOps.fields.refundNote')} value={refundNote} onChange={(event) => setRefundNote(event.target.value)} />
-        <button type="submit">{t('admin.orderOps.actions.createRefund')}</button>
-      </form>
+      <Container className="p-6">
+        <Heading level="h2">{t('admin.orderOps.sections.tracking')}</Heading>
+        <form onSubmit={onUpdateTracking} className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+          <div className="flex flex-col gap-y-2">
+            <Label htmlFor="tracking_fulfillment_id">{t('admin.orderOps.fields.fulfillmentId')}</Label>
+            <Input
+              id="tracking_fulfillment_id"
+              value={fulfillmentId}
+              onChange={(event) => setFulfillmentId(event.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-y-2">
+            <Label htmlFor="tracking_item_id">{t('admin.orderOps.fields.itemId')}</Label>
+            <Input id="tracking_item_id" value={shipmentItemId} onChange={(event) => setShipmentItemId(event.target.value)} />
+          </div>
+          <div className="flex flex-col gap-y-2">
+            <Label htmlFor="tracking_qty">Qty</Label>
+            <Input
+              id="tracking_qty"
+              type="number"
+              min={1}
+              value={shipmentItemQuantity}
+              onChange={(event) => setShipmentItemQuantity(Number(event.target.value) || 1)}
+            />
+          </div>
+          <div className="flex flex-col gap-y-2">
+            <Label htmlFor="tracking_number">{t('admin.orderOps.fields.trackingNumber')}</Label>
+            <Input id="tracking_number" value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} />
+          </div>
+          <div className="flex flex-col gap-y-2 sm:col-span-2">
+            <Label htmlFor="tracking_url">{t('admin.orderOps.fields.trackingUrl')}</Label>
+            <Input id="tracking_url" value={trackingUrl} onChange={(event) => setTrackingUrl(event.target.value)} />
+          </div>
+          <div>
+            <Button type="submit">{t('admin.orderOps.actions.updateTracking')}</Button>
+          </div>
+        </form>
+      </Container>
 
-      <h2>{t('admin.orderOps.sections.returns')}</h2>
-      <form onSubmit={onRunReturnLifecycle}>
-        <textarea value={returnPayload} onChange={(event) => setReturnPayload(event.target.value)} rows={6} style={{ width: '100%' }} />
-        <button type="submit">{t('admin.orderOps.actions.beginReturn')}</button>
-      </form>
+      <Container className="p-6">
+        <Heading level="h2">{t('admin.orderOps.sections.refund')}</Heading>
+        <form onSubmit={onCreateRefund} className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+          <div className="flex flex-col gap-y-2">
+            <Label htmlFor="payment_id">{t('admin.orderOps.fields.paymentId')}</Label>
+            <Input id="payment_id" value={paymentId} onChange={(event) => setPaymentId(event.target.value)} />
+          </div>
+          <div className="flex flex-col gap-y-2">
+            <Label htmlFor="refund_amount">Amount</Label>
+            <Input
+              id="refund_amount"
+              type="number"
+              min={0}
+              value={refundAmount}
+              onChange={(event) => setRefundAmount(Number(event.target.value) || 0)}
+            />
+          </div>
+          <div className="flex flex-col gap-y-2">
+            <Label htmlFor="refund_note">{t('admin.orderOps.fields.refundNote')}</Label>
+            <Input id="refund_note" value={refundNote} onChange={(event) => setRefundNote(event.target.value)} />
+          </div>
+          <div>
+            <Button type="submit">{t('admin.orderOps.actions.createRefund')}</Button>
+          </div>
+        </form>
+      </Container>
 
-      {message ? <p>{message}</p> : null}
-      {error ? <p>{error}</p> : null}
+      <Container className="p-6">
+        <Heading level="h2">{t('admin.orderOps.sections.returns')}</Heading>
+        <form onSubmit={onRunReturnLifecycle} className="mt-4 flex flex-col gap-y-3">
+          <div className="flex flex-col gap-y-2">
+            <Label htmlFor="return_payload">Payload JSON</Label>
+            <Textarea id="return_payload" value={returnPayload} onChange={(event) => setReturnPayload(event.target.value)} rows={6} />
+          </div>
+          <div>
+            <Button type="submit">{t('admin.orderOps.actions.beginReturn')}</Button>
+          </div>
+        </form>
+      </Container>
 
-      <h2>{t('admin.orderOps.sections.timeline')}</h2>
-      {!timeline.length ? <p>{t('admin.orderOps.emptyTimeline')}</p> : null}
-      <ul>
-        {timeline.map((event) => (
-          <li key={event.id}>
-            <strong>{event.type}</strong> — {event.label} ({new Date(event.at).toLocaleString()})
-          </li>
-        ))}
-      </ul>
+      <Container className="p-0 overflow-hidden">
+        <div className="p-6 border-b border-ui-border-base">
+          <Heading level="h2">{t('admin.orderOps.sections.timeline')}</Heading>
+        </div>
+        {!timeline.length ? <Text className="p-6">{t('admin.orderOps.emptyTimeline')}</Text> : null}
+        {timeline.length ? (
+          <Table>
+            <Table.Header>
+              <Table.Row>
+                <Table.HeaderCell>Type</Table.HeaderCell>
+                <Table.HeaderCell>Label</Table.HeaderCell>
+                <Table.HeaderCell>Timestamp</Table.HeaderCell>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {timeline.map((event) => (
+                <Table.Row key={event.id}>
+                  <Table.Cell>{event.type}</Table.Cell>
+                  <Table.Cell>{event.label}</Table.Cell>
+                  <Table.Cell>{new Date(event.at).toLocaleString()}</Table.Cell>
+                </Table.Row>
+              ))}
+            </Table.Body>
+          </Table>
+        ) : null}
+      </Container>
     </div>
   );
 };

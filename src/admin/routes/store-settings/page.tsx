@@ -1,4 +1,5 @@
 import { defineRouteConfig } from '@medusajs/admin-sdk';
+import { Button, Container, Heading, Input, Label, Text } from '@medusajs/ui';
 import { FormEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -15,6 +16,7 @@ const StoreSettingsPage = () => {
   const { t } = useTranslation();
   const [settings, setSettings] = useState<StoreSettings>(defaultState);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -34,6 +36,7 @@ const StoreSettingsPage = () => {
 
     setError('');
     setMessage('');
+    setIsSaving(true);
 
     try {
       const response = await updateStoreSettings(settings);
@@ -41,60 +44,70 @@ const StoreSettingsPage = () => {
       setMessage(response.message || t('admin.storeSettings.success.saved'));
     } catch (err) {
       setError((err as Error).message || t('admin.storeSettings.errors.save'));
+    } finally {
+      setIsSaving(false);
     }
   };
 
   return (
-    <div style={{ padding: '1.5rem', maxWidth: 700 }}>
-      <h1>{t('admin.storeSettings.title')}</h1>
-      <p>{t('admin.storeSettings.description')}</p>
+    <div className="flex flex-col gap-y-6 p-6">
+      <Container className="p-6">
+        <Heading level="h1">{t('admin.storeSettings.title')}</Heading>
+        <Text size="small" className="text-ui-fg-subtle mt-2">
+          {t('admin.storeSettings.description')}
+        </Text>
+      </Container>
 
-      {isLoading ? <p>{t('admin.shared.loading')}</p> : null}
+      <Container className="p-6 max-w-2xl">
+        {isLoading ? <Text>{t('admin.shared.loading')}</Text> : null}
+        {!isLoading && error ? <Text className="text-ui-fg-error">{error}</Text> : null}
 
-      {!isLoading && error ? <p>{error}</p> : null}
-
-      {!isLoading && !error ? (
-        <form onSubmit={onSave}>
-          <label>
-            {t('admin.storeSettings.fields.storeName')}
-            <input
-              value={settings.store_name}
-              onChange={(event) => setSettings((prev) => ({ ...prev, store_name: event.target.value }))}
-            />
-          </label>
-          <br />
-          <label>
-            {t('admin.storeSettings.fields.supportEmail')}
-            <input
-              type="email"
-              value={settings.support_email}
-              onChange={(event) => setSettings((prev) => ({ ...prev, support_email: event.target.value }))}
-            />
-          </label>
-          <br />
-          <label>
-            {t('admin.storeSettings.fields.defaultCurrency')}
-            <input
-              value={settings.default_currency_code}
-              onChange={(event) =>
-                setSettings((prev) => ({ ...prev, default_currency_code: event.target.value.toLowerCase() }))
-              }
-            />
-          </label>
-          <br />
-          <label>
-            {t('admin.storeSettings.fields.timezone')}
-            <input
-              value={settings.timezone}
-              onChange={(event) => setSettings((prev) => ({ ...prev, timezone: event.target.value }))}
-            />
-          </label>
-          <br />
-          <button type="submit">{t('admin.storeSettings.actions.save')}</button>
-        </form>
-      ) : null}
-
-      {message ? <p>{message}</p> : null}
+        {!isLoading && !error ? (
+          <form onSubmit={onSave} className="flex flex-col gap-y-4">
+            <div className="flex flex-col gap-y-2">
+              <Label htmlFor="store_name">{t('admin.storeSettings.fields.storeName')}</Label>
+              <Input
+                id="store_name"
+                value={settings.store_name}
+                onChange={(event) => setSettings((prev) => ({ ...prev, store_name: event.target.value }))}
+              />
+            </div>
+            <div className="flex flex-col gap-y-2">
+              <Label htmlFor="support_email">{t('admin.storeSettings.fields.supportEmail')}</Label>
+              <Input
+                id="support_email"
+                type="email"
+                value={settings.support_email}
+                onChange={(event) => setSettings((prev) => ({ ...prev, support_email: event.target.value }))}
+              />
+            </div>
+            <div className="flex flex-col gap-y-2">
+              <Label htmlFor="default_currency_code">{t('admin.storeSettings.fields.defaultCurrency')}</Label>
+              <Input
+                id="default_currency_code"
+                value={settings.default_currency_code}
+                onChange={(event) =>
+                  setSettings((prev) => ({ ...prev, default_currency_code: event.target.value.toLowerCase() }))
+                }
+              />
+            </div>
+            <div className="flex flex-col gap-y-2">
+              <Label htmlFor="timezone">{t('admin.storeSettings.fields.timezone')}</Label>
+              <Input
+                id="timezone"
+                value={settings.timezone}
+                onChange={(event) => setSettings((prev) => ({ ...prev, timezone: event.target.value }))}
+              />
+            </div>
+            <div className="flex items-center gap-x-3">
+              <Button type="submit" isLoading={isSaving}>
+                {t('admin.storeSettings.actions.save')}
+              </Button>
+              {message ? <Text className="text-ui-fg-interactive">{message}</Text> : null}
+            </div>
+          </form>
+        ) : null}
+      </Container>
     </div>
   );
 };
