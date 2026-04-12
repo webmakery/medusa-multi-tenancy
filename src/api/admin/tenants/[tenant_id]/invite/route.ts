@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 
 import { TENANT_MANAGEMENT_MODULE } from '../../../../../modules/tenant-management';
 import TenantManagementModuleService from '../../../../../modules/tenant-management/service';
+import { authorizeTenantAction } from '../../_shared/authorization';
 
 interface InviteBody {
   email?: string;
@@ -15,6 +16,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   const body = (req.body || {}) as InviteBody;
   const { tenant_id } = req.params;
+
+  const authorization = await authorizeTenantAction(req, res, 'invite');
+
+  if (!authorization.allowed) {
+    return;
+  }
 
   if (!body.email?.trim()) {
     return res.status(400).json({ message: 'email is required' });
