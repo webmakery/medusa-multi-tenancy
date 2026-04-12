@@ -6,6 +6,9 @@ import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { StepResponse, WorkflowResponse, createStep, createWorkflow } from '@medusajs/framework/workflows-sdk';
 import { createSalesChannelsWorkflow, updateStoresWorkflow } from '@medusajs/medusa/core-flows';
 
+import { AUDIT_LOG_MODULE } from '../../modules/audit-log';
+import AuditLogModuleService from '../../modules/audit-log/service';
+
 export interface CreateTenantWorkflowInput {
   name: string;
   slug: string;
@@ -57,6 +60,20 @@ const createTenantStep = createStep(
       user_email: input.owner_email,
       role: 'owner',
       status: 'active',
+    });
+
+    const auditLogService: AuditLogModuleService = container.resolve(AUDIT_LOG_MODULE);
+
+    await auditLogService.recordEvent({
+      actor: input.owner_email,
+      tenant_id: tenantId,
+      action: 'tenant_created',
+      resource_id: tenantId,
+      payload: {
+        name: input.name,
+        slug: input.slug,
+        owner_email: input.owner_email,
+      },
     });
 
     return new StepResponse(

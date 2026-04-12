@@ -31,7 +31,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     tenant_id,
     email: body.email,
     role: body.role,
-    invited_by: body.invited_by,
+    invited_by: body.invited_by || authorization.actorEmail,
     expires_in_days: body.expires_in_days,
   });
 

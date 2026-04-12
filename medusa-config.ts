@@ -4,6 +4,7 @@ import { TENANT_MANAGEMENT_MODULE } from './src/modules/tenant-management'
 import { THEME_MODULE } from './src/modules/theme'
 import { APPS_MODULE } from './src/modules/apps'
 import { ANALYTICS_MODULE } from './src/modules/analytics'
+import { AUDIT_LOG_MODULE } from './src/modules/audit-log'
 
 loadEnv(process.env.NODE_ENV || 'development', process.cwd())
 
@@ -38,6 +39,9 @@ module.exports = defineConfig({
     },
     [ANALYTICS_MODULE]: {
       resolve: './modules/analytics',
+    },
+    [AUDIT_LOG_MODULE]: {
+      resolve: './modules/audit-log',
     },
   },
 })

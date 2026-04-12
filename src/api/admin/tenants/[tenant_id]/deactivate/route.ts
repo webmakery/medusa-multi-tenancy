@@ -16,7 +16,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   try {
-    const tenant = await tenantManagementService.deactivateTenant(tenant_id);
+    const tenant = await tenantManagementService.deactivateTenant(tenant_id, authorization.actorEmail);
 
     return res.status(200).json({ tenant });
   } catch (error: any) {

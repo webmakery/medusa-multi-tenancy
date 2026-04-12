@@ -39,7 +39,7 @@ export async function authorizeTenantAction(
   req: MedusaRequest,
   res: MedusaResponse,
   action: TenantAction
-): Promise<{ allowed: boolean; actorRole?: TenantRole }> {
+): Promise<{ allowed: boolean; actorRole?: TenantRole; actorEmail?: string }> {
   const { tenant_id } = req.params;
 
   if (!tenant_id) {
@@ -75,5 +75,5 @@ export async function authorizeTenantAction(
     return { allowed: false };
   }
 
-  return { allowed: true, actorRole: membership.role };
+  return { allowed: true, actorRole: membership.role, actorEmail };
 }
