@@ -4,6 +4,7 @@ import type { Knex } from 'knex';
 
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from '@medusajs/framework';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { getActiveTenantIdFromAuthContext, getActorEmail } from '../../api/admin/_shared/auth-context';
 
 /**
  * Type for tenant context stored in AsyncLocalStorage
@@ -137,7 +138,69 @@ async function resolveTenantId(req: MedusaRequest): Promise<string | null> {
   return null;
 }
 
+function isAdminPath(req: MedusaRequest): boolean {
+  return req.originalUrl.startsWith('/admin');
+}
+
+async function enforceAdminTenantSelection(req: MedusaRequest): Promise<string | null> {
+  if (!isAdminPath(req)) {
+    return null;
+  }
+
+  const knex = req.scope?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) as Knex | undefined;
+
+  if (!knex) {
+    return null;
+  }
+
+  const actorEmail = getActorEmail(req);
+
+  if (!actorEmail) {
+    return null;
+  }
+
+  const memberships = await knex('tenant_membership')
+    .select('tenant_id', 'status')
+    .where({ user_email: actorEmail, status: 'active' });
+
+  if (!memberships.length) {
+    return null;
+  }
+
+  const headerTenantId = normalizeHeaderValue(req.headers['x-tenant-id'])?.trim();
+  const activeTenantId = getActiveTenantIdFromAuthContext(req);
+  const selectedTenantId = headerTenantId || activeTenantId || (memberships.length === 1 ? memberships[0].tenant_id : null);
+
+  if (!selectedTenantId) {
+    throw Object.assign(new Error('active_tenant_id is required for users belonging to multiple tenants.'), { status: 400 });
+  }
+
+  const isAllowedTenant = memberships.some((membership) => membership.tenant_id === selectedTenantId);
+
+  if (!isAllowedTenant) {
+    throw Object.assign(new Error('You are not an active member of the selected tenant.'), { status: 403 });
+  }
+
+  req.headers['x-tenant-id'] = selectedTenantId;
+
+  const authContext = (req as any).auth_context;
+  if (authContext) {
+    authContext.app_metadata = {
+      ...(authContext.app_metadata || {}),
+      active_tenant_id: selectedTenantId,
+    };
+  }
+
+  return selectedTenantId;
+}
+
 export async function tenantContextMiddleware(req: MedusaRequest, _res: MedusaResponse, next: MedusaNextFunction) {
+  try {
+    await enforceAdminTenantSelection(req);
+  } catch (error: any) {
+    return _res.status(error.status || 400).json({ message: error.message || 'Invalid tenant context.' });
+  }
+
   const tenantId = await resolveTenantId(req);
 
   if (tenantId) {
