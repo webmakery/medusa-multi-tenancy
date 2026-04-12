@@ -1,4 +1,5 @@
 import { defineRouteConfig } from '@medusajs/admin-sdk';
+import { Badge, Container, Heading, Table, Text } from '@medusajs/ui';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -18,35 +19,48 @@ const TeamMembersPage = () => {
   }, [t]);
 
   return (
-    <div style={{ padding: '1.5rem' }}>
-      <h1>{t('admin.teamMembers.title')}</h1>
-      <p>{t('admin.teamMembers.description')}</p>
+    <div className="flex flex-col gap-y-6 p-6">
+      <Container className="p-6">
+        <Heading level="h1">{t('admin.teamMembers.title')}</Heading>
+        <Text size="small" className="text-ui-fg-subtle mt-2">
+          {t('admin.teamMembers.description')}
+        </Text>
+      </Container>
 
-      {isLoading ? <p>{t('admin.shared.loading')}</p> : null}
-      {!isLoading && error ? <p>{error}</p> : null}
+      <Container className="p-0 overflow-hidden">
+        {isLoading ? (
+          <Text className="p-6">{t('admin.shared.loading')}</Text>
+        ) : null}
 
-      {!isLoading && !error && !members.length ? <p>{t('admin.teamMembers.empty')}</p> : null}
+        {!isLoading && error ? <Text className="p-6 text-ui-fg-error">{error}</Text> : null}
 
-      {!isLoading && !error && members.length ? (
-        <table>
-          <thead>
-            <tr>
-              <th>{t('admin.teamMembers.columns.email')}</th>
-              <th>{t('admin.teamMembers.columns.role')}</th>
-              <th>{t('admin.teamMembers.columns.status')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {members.map((member) => (
-              <tr key={member.id}>
-                <td>{member.user_email}</td>
-                <td>{member.role}</td>
-                <td>{member.status}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : null}
+        {!isLoading && !error && !members.length ? <Text className="p-6">{t('admin.teamMembers.empty')}</Text> : null}
+
+        {!isLoading && !error && members.length ? (
+          <Table>
+            <Table.Header>
+              <Table.Row>
+                <Table.HeaderCell>{t('admin.teamMembers.columns.email')}</Table.HeaderCell>
+                <Table.HeaderCell>{t('admin.teamMembers.columns.role')}</Table.HeaderCell>
+                <Table.HeaderCell>{t('admin.teamMembers.columns.status')}</Table.HeaderCell>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {members.map((member) => (
+                <Table.Row key={member.id}>
+                  <Table.Cell>{member.user_email}</Table.Cell>
+                  <Table.Cell>{member.role}</Table.Cell>
+                  <Table.Cell>
+                    <Badge color={member.status === 'active' ? 'green' : 'orange'} size="2xsmall">
+                      {member.status}
+                    </Badge>
+                  </Table.Cell>
+                </Table.Row>
+              ))}
+            </Table.Body>
+          </Table>
+        ) : null}
+      </Container>
     </div>
   );
 };

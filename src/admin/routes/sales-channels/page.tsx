@@ -1,4 +1,5 @@
 import { defineRouteConfig } from '@medusajs/admin-sdk';
+import { Badge, Container, Heading, Table, Text } from '@medusajs/ui';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -18,25 +19,46 @@ const SalesChannelsPage = () => {
   }, [t]);
 
   return (
-    <div style={{ padding: '1.5rem' }}>
-      <h1>{t('admin.salesChannels.title')}</h1>
-      <p>{t('admin.salesChannels.description')}</p>
+    <div className="flex flex-col gap-y-6 p-6">
+      <Container className="p-6">
+        <Heading level="h1">{t('admin.salesChannels.title')}</Heading>
+        <Text size="small" className="text-ui-fg-subtle mt-2">
+          {t('admin.salesChannels.description')}
+        </Text>
+      </Container>
 
-      {isLoading ? <p>{t('admin.shared.loading')}</p> : null}
-      {!isLoading && error ? <p>{error}</p> : null}
+      <Container className="p-0 overflow-hidden">
+        {isLoading ? <Text className="p-6">{t('admin.shared.loading')}</Text> : null}
+        {!isLoading && error ? <Text className="p-6 text-ui-fg-error">{error}</Text> : null}
+        {!isLoading && !error && !channels.length ? <Text className="p-6">{t('admin.salesChannels.empty')}</Text> : null}
 
-      {!isLoading && !error && !channels.length ? <p>{t('admin.salesChannels.empty')}</p> : null}
-
-      {!isLoading && !error && channels.length ? (
-        <ul>
-          {channels.map((channel) => (
-            <li key={channel.id}>
-              <strong>{channel.name}</strong> — {channel.description}{' '}
-              ({channel.is_enabled ? t('admin.salesChannels.status.enabled') : t('admin.salesChannels.status.disabled')})
-            </li>
-          ))}
-        </ul>
-      ) : null}
+        {!isLoading && !error && channels.length ? (
+          <Table>
+            <Table.Header>
+              <Table.Row>
+                <Table.HeaderCell>{t('admin.salesChannels.title')}</Table.HeaderCell>
+                <Table.HeaderCell>{t('admin.salesChannels.description')}</Table.HeaderCell>
+                <Table.HeaderCell>Status</Table.HeaderCell>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {channels.map((channel) => (
+                <Table.Row key={channel.id}>
+                  <Table.Cell>{channel.name}</Table.Cell>
+                  <Table.Cell>{channel.description || '-'}</Table.Cell>
+                  <Table.Cell>
+                    <Badge color={channel.is_enabled ? 'green' : 'grey'} size="2xsmall">
+                      {channel.is_enabled
+                        ? t('admin.salesChannels.status.enabled')
+                        : t('admin.salesChannels.status.disabled')}
+                    </Badge>
+                  </Table.Cell>
+                </Table.Row>
+              ))}
+            </Table.Body>
+          </Table>
+        ) : null}
+      </Container>
     </div>
   );
 };
