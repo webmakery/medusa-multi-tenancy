@@ -4,6 +4,8 @@ import type { Knex } from 'knex';
 
 import { ContainerRegistrationKeys, MedusaService } from '@medusajs/framework/utils';
 
+import { AUDIT_LOG_MODULE } from '../audit-log';
+import AuditLogModuleService from '../audit-log/service';
 import TenantInvitation from './models/tenant-invitation';
 import TenantMembership from './models/tenant-membership';
 
@@ -25,6 +27,10 @@ class TenantManagementModuleService extends MedusaService({
     }
 
     return role as TenantRole;
+  }
+
+  private getAuditLogService(): AuditLogModuleService {
+    return (this as any).__container__.resolve(AUDIT_LOG_MODULE) as AuditLogModuleService;
   }
 
   async listTenants() {
@@ -93,6 +99,17 @@ class TenantManagementModuleService extends MedusaService({
     };
 
     await knex('tenant_invitation').insert(invitation);
+    await this.getAuditLogService().recordEvent({
+      actor: invitation.invited_by || 'system',
+      tenant_id: input.tenant_id,
+      action: 'invitation_sent',
+      resource_id: invitation.id,
+      payload: {
+        email: invitation.email,
+        role: invitation.role,
+        expires_at: invitation.expires_at,
+      },
+    });
 
     return invitation;
   }
@@ -138,6 +155,17 @@ class TenantManagementModuleService extends MedusaService({
       .where({ id: invitation.id })
       .update({ status: 'accepted', accepted_at: knex.fn.now(), updated_at: knex.fn.now() });
 
+    await this.getAuditLogService().recordEvent({
+      actor: invitation.email,
+      tenant_id: invitation.tenant_id,
+      action: 'invitation_accepted',
+      resource_id: invitation.id,
+      payload: {
+        email: invitation.email,
+        role: invitation.role,
+      },
+    });
+
     return {
       tenant_id: invitation.tenant_id,
       email: invitation.email,
@@ -167,7 +195,7 @@ class TenantManagementModuleService extends MedusaService({
       .first();
   }
 
-  async updateMemberRole(input: { tenant_id: string; member_id: string; role: string }) {
+  async updateMemberRole(input: { tenant_id: string; member_id: string; role: string; actor?: string }) {
     const knex = this.getKnex();
 
     const role = this.normalizeRole(input.role);
@@ -184,13 +212,25 @@ class TenantManagementModuleService extends MedusaService({
       .where({ id: member.id })
       .update({ role, updated_at: knex.fn.now() });
 
+    await this.getAuditLogService().recordEvent({
+      actor: input.actor || 'system',
+      tenant_id: input.tenant_id,
+      action: 'role_changed',
+      resource_id: member.id,
+      payload: {
+        previous_role: member.role,
+        new_role: role,
+        user_email: member.user_email,
+      },
+    });
+
     return {
       ...member,
       role,
     };
   }
 
-  async deactivateTenant(tenantId: string) {
+  async deactivateTenant(tenantId: string, actor?: string) {
     const knex = this.getKnex();
 
     const tenant = await knex('tenant').where({ id: tenantId }).first();
@@ -203,6 +243,17 @@ class TenantManagementModuleService extends MedusaService({
     await knex('tenant_membership')
       .where({ tenant_id: tenantId })
       .update({ status: 'inactive', updated_at: knex.fn.now() });
+
+    await this.getAuditLogService().recordEvent({
+      actor: actor || 'system',
+      tenant_id: tenantId,
+      action: 'tenant_deactivated',
+      resource_id: tenantId,
+      payload: {
+        previous_status: tenant.status,
+        new_status: 'inactive',
+      },
+    });
 
     return {
       ...tenant,

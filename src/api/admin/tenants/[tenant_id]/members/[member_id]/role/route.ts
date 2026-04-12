@@ -29,6 +29,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       tenant_id,
       member_id,
       role: body.role,
+      actor: authorization.actorEmail,
     });
 
     return res.status(200).json({ member });
