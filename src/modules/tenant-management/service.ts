@@ -154,6 +154,19 @@ class TenantManagementModuleService extends MedusaService({
       .orderBy('created_at', 'asc');
   }
 
+
+  async getTenantMembershipByEmail(input: { tenant_id: string; user_email: string }) {
+    const knex = this.getKnex();
+
+    return knex('tenant_membership')
+      .select('id', 'tenant_id', 'user_email', 'role', 'status', 'created_at', 'updated_at')
+      .where({
+        tenant_id: input.tenant_id,
+        user_email: input.user_email.trim().toLowerCase(),
+      })
+      .first();
+  }
+
   async updateMemberRole(input: { tenant_id: string; member_id: string; role: string }) {
     const knex = this.getKnex();
 
