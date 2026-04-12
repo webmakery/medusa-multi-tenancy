@@ -1,6 +1,9 @@
 import { AsyncLocalStorage } from 'async_hooks';
 
+import type { Knex } from 'knex';
+
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from '@medusajs/framework';
+import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 
 /**
  * Type for tenant context stored in AsyncLocalStorage
@@ -9,74 +12,141 @@ export interface TenantContext {
   tenantId: string;
 }
 
-/**
- * AsyncLocalStorage to maintain tenant context across async operations
- * This ensures tenant_id is available to database connection hooks
- *
- * CRITICAL: This is used by the Medusa framework patch (patches/@medusajs+framework+2.10.1.patch)
- * to inject tenant context into all database queries for Row Level Security (RLS).
- */
 export const tenantContextStorage = new AsyncLocalStorage<TenantContext>();
 
-/**
- * Middleware to extract tenant_id from request and store in AsyncLocalStorage context
- *
- * Tenant ID can come from:
- * - Header: x-tenant-id (recommended for production)
- * - JWT token: tenant_id claim (if you store it in JWT)
- * - Query parameter: tenant_id (for testing/development only)
- *
- * The tenant_id is stored in AsyncLocalStorage, which makes it available
- * to the database connection hooks (via patch) that set PostgreSQL session variables.
- */
-export function tenantContextMiddleware(
-  req: MedusaRequest,
-  res: MedusaResponse,
-  next: MedusaNextFunction
-) {
-  // Extract tenant_id from various sources
-  let tenantId: string | undefined;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  // 1. Check header (recommended for production)
-  tenantId = req.headers['x-tenant-id'] as string;
-
-  // 2. Check JWT token if authenticated
-  // Note: req.auth is not available in MedusaRequest type
-  // If you need JWT-based tenant extraction, use a custom property or header
-  // Example implementation (commented out):
-  // if (!tenantId && (req as any).auth?.context) {
-  //   const actorMetadata = (req as any).auth.context?.actor_metadata;
-  //   if (actorMetadata?.tenant_id) {
-  //     tenantId = actorMetadata.tenant_id;
-  //   }
-  // }
-
-  // 3. Check query parameter (for testing/development only)
-  if (!tenantId && process.env.NODE_ENV !== 'production') {
-    tenantId = req.query.tenant_id as string;
+function normalizeHeaderValue(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) {
+    return value[0];
   }
 
-  // If tenant_id is found, validate and store it in AsyncLocalStorage
-  if (tenantId) {
-    // Basic UUID validation
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(tenantId)) {
-      console.log(`[TENANT_MIDDLEWARE] Invalid tenant_id format: ${tenantId}`);
-      return res.status(400).json({
-        message: 'Invalid tenant_id format. Expected UUID.'
-      });
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  return undefined;
+}
+
+function normalizeSlug(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (!/^[a-z0-9-]{1,64}$/.test(normalized)) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function getSubdomainFromRequest(req: MedusaRequest): string | null {
+  const forwardedHost = normalizeHeaderValue(req.headers['x-forwarded-host']);
+  const hostHeader = normalizeHeaderValue(req.headers.host);
+  const host = (forwardedHost || hostHeader || '').split(',')[0]?.trim().toLowerCase();
+
+  if (!host) {
+    return null;
+  }
+
+  const hostname = host.split(':')[0];
+
+  if (
+    !hostname ||
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    /^[0-9.]+$/.test(hostname)
+  ) {
+    return null;
+  }
+
+  const segments = hostname.split('.').filter(Boolean);
+
+  if (segments.length < 3) {
+    return null;
+  }
+
+  return normalizeSlug(segments[0]);
+}
+
+async function resolveTenantIdFromSlug(req: MedusaRequest, slug: string): Promise<string | null> {
+  const knex = req.scope?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) as Knex | undefined;
+
+  if (!knex) {
+    return null;
+  }
+
+  const tenant = await knex('tenant').select('tenant_id').where({ slug }).first();
+
+  if (tenant?.tenant_id && UUID_REGEX.test(tenant.tenant_id)) {
+    return tenant.tenant_id;
+  }
+
+  return null;
+}
+
+async function resolveTenantId(req: MedusaRequest): Promise<string | null> {
+  const headerValue = normalizeHeaderValue(req.headers['x-tenant-id']);
+
+  if (headerValue?.trim()) {
+    const normalized = headerValue.trim();
+
+    if (UUID_REGEX.test(normalized)) {
+      return normalized;
     }
 
-    console.log(`[TENANT_MIDDLEWARE] Setting tenant context: ${tenantId}`);
-    // Store tenant context in AsyncLocalStorage
-    // This will be available to all async operations in this request
+    const tenantIdFromSlugHeader = await resolveTenantIdFromSlug(req, normalizeSlug(normalized) || '');
+    if (tenantIdFromSlugHeader) {
+      return tenantIdFromSlugHeader;
+    }
+  }
+
+  const slugCandidates: Array<string | null> = [
+    normalizeSlug(normalizeHeaderValue(req.headers['x-tenant-slug'])),
+    normalizeSlug(req.query?.tenant_slug),
+    normalizeSlug(req.query?.tenant),
+    getSubdomainFromRequest(req),
+  ];
+
+  for (const slug of slugCandidates) {
+    if (!slug) {
+      continue;
+    }
+
+    const tenantId = await resolveTenantIdFromSlug(req, slug);
+
+    if (tenantId) {
+      return tenantId;
+    }
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    const fromQuery = req.query?.tenant_id;
+
+    if (typeof fromQuery === 'string' && UUID_REGEX.test(fromQuery.trim())) {
+      return fromQuery.trim();
+    }
+  }
+
+  return null;
+}
+
+export async function tenantContextMiddleware(req: MedusaRequest, _res: MedusaResponse, next: MedusaNextFunction) {
+  const tenantId = await resolveTenantId(req);
+
+  if (tenantId) {
+    req.headers['x-tenant-id'] = tenantId;
+
     return tenantContextStorage.run({ tenantId }, () => {
       next();
     });
   }
 
-  // No tenant_id found - continue without context (admin/system mode)
-  // RLS policies allow queries when app.current_tenant is NULL
-  console.log('[TENANT_MIDDLEWARE] No tenant_id - admin mode');
   next();
 }
