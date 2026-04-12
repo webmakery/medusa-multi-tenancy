@@ -291,4 +291,138 @@ describe('Tenant Management API integration', () => {
       expect(statuses.every((status: string) => status === 'inactive')).toBe(true)
     })
   })
+
+  describe('dashboard access isolation', () => {
+    it('prevents tenant A members from reading tenant B dashboard data', async () => {
+      const seed = Date.now() + 5
+      const tenantA = await createTenant(`Dashboard Tenant A ${seed}`, `owner-da-${seed}@example.com`)
+      const tenantB = await createTenant(`Dashboard Tenant B ${seed}`, `owner-db-${seed}@example.com`)
+
+      await expect(
+        axios.get(`${API_URL}/admin/onboarding-checklist`, {
+          headers: {
+            ...authHeaders,
+            'x-tenant-id': tenantB.tenant_id,
+            'x-user-email': tenantA.ownerEmail,
+          },
+        })
+      ).rejects.toMatchObject({
+        response: {
+          status: 403,
+          data: { message: 'You are not an active member of this tenant.' },
+        },
+      })
+    })
+  })
+
+  describe('role-based restrictions', () => {
+    it('enforces owner/admin/staff permissions for invite and deactivate actions', async () => {
+      const seed = Date.now() + 6
+      const tenant = await createTenant(`Role Restrictions ${seed}`, `owner-rr-${seed}@example.com`)
+      const adminEmail = `admin-rr-${seed}@example.com`
+      const staffEmail = `staff-rr-${seed}@example.com`
+
+      const adminInvite = await inviteUser(tenant.tenant_id, tenant.ownerEmail, adminEmail)
+      await axios.post(
+        `${API_URL}/admin/tenants/invitations/accept`,
+        { invitation_token: adminInvite.data.invitation.invitation_token },
+        { headers: authHeaders }
+      )
+
+      const members = await axios.get(`${API_URL}/admin/tenants/${tenant.tenant_id}/members`, {
+        headers: authHeaders,
+      })
+      const adminMember = members.data.members.find((member: any) => member.user_email === adminEmail)
+      expect(adminMember).toBeDefined()
+
+      await axios.post(
+        `${API_URL}/admin/tenants/${tenant.tenant_id}/members/${adminMember.id}/role`,
+        { role: 'admin' },
+        {
+          headers: {
+            ...authHeaders,
+            'x-user-email': tenant.ownerEmail,
+          },
+        }
+      )
+
+      const staffInviteFromAdmin = await inviteUser(tenant.tenant_id, adminEmail, staffEmail)
+      expect(staffInviteFromAdmin.status).toBe(201)
+
+      await axios.post(
+        `${API_URL}/admin/tenants/invitations/accept`,
+        { invitation_token: staffInviteFromAdmin.data.invitation.invitation_token },
+        { headers: authHeaders }
+      )
+
+      await expect(
+        inviteUser(tenant.tenant_id, staffEmail, `blocked-staff-${seed}@example.com`)
+      ).rejects.toMatchObject({
+        response: {
+          status: 403,
+        },
+      })
+
+      await expect(
+        axios.post(
+          `${API_URL}/admin/tenants/${tenant.tenant_id}/deactivate`,
+          {},
+          {
+            headers: {
+              ...authHeaders,
+              'x-user-email': adminEmail,
+            },
+          }
+        )
+      ).rejects.toMatchObject({
+        response: {
+          status: 403,
+          data: { message: 'Insufficient permissions for deactivate_tenant. Required role: owner.' },
+        },
+      })
+    })
+  })
+
+  describe('multi-tenant user switching', () => {
+    it('returns tenant-specific dashboard settings when the same user switches tenant context', async () => {
+      const seed = Date.now() + 7
+      const tenantA = await createTenant(`Switch Store A ${seed}`, `owner-sa-${seed}@example.com`)
+      const tenantB = await createTenant(`Switch Store B ${seed}`, `owner-sb-${seed}@example.com`)
+      const sharedEmail = `shared-switch-${seed}@example.com`
+
+      const inviteA = await inviteUser(tenantA.tenant_id, tenantA.ownerEmail, sharedEmail)
+      const inviteB = await inviteUser(tenantB.tenant_id, tenantB.ownerEmail, sharedEmail)
+
+      await axios.post(
+        `${API_URL}/admin/tenants/invitations/accept`,
+        { invitation_token: inviteA.data.invitation.invitation_token },
+        { headers: authHeaders }
+      )
+      await axios.post(
+        `${API_URL}/admin/tenants/invitations/accept`,
+        { invitation_token: inviteB.data.invitation.invitation_token },
+        { headers: authHeaders }
+      )
+
+      const tenantASettings = await axios.get(`${API_URL}/admin/settings/store`, {
+        headers: {
+          ...authHeaders,
+          'x-user-email': sharedEmail,
+          'x-tenant-id': tenantA.tenant_id,
+        },
+      })
+      const tenantBSettings = await axios.get(`${API_URL}/admin/settings/store`, {
+        headers: {
+          ...authHeaders,
+          'x-user-email': sharedEmail,
+          'x-tenant-id': tenantB.tenant_id,
+        },
+      })
+
+      expect(tenantASettings.status).toBe(200)
+      expect(tenantBSettings.status).toBe(200)
+      expect(tenantASettings.data.settings.store_name).toBe(`Switch Store A ${seed}`)
+      expect(tenantBSettings.data.settings.store_name).toBe(`Switch Store B ${seed}`)
+    })
+  })
 })
