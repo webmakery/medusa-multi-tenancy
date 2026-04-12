@@ -3,6 +3,7 @@ import { TENANT_CONTEXT_MODULE } from './src/modules/tenant-context'
 import { TENANT_MANAGEMENT_MODULE } from './src/modules/tenant-management'
 import { THEME_MODULE } from './src/modules/theme'
 import { APPS_MODULE } from './src/modules/apps'
+import { ANALYTICS_MODULE } from './src/modules/analytics'
 
 loadEnv(process.env.NODE_ENV || 'development', process.cwd())
 
@@ -34,6 +35,9 @@ module.exports = defineConfig({
     },
     [APPS_MODULE]: {
       resolve: './modules/apps',
+    },
+    [ANALYTICS_MODULE]: {
+      resolve: './modules/analytics',
     },
   },
 })
