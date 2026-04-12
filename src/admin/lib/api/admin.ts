@@ -138,6 +138,32 @@ export async function getSalesChannels() {
   };
 }
 
+interface UpsertSalesChannelInput {
+  name: string;
+  description?: string;
+  is_enabled?: boolean;
+}
+
+export async function createSalesChannel(input: UpsertSalesChannelInput) {
+  return apiRequest<{ message?: string; sales_channel: SalesChannel }>('/sales-channels', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateSalesChannel(channelId: string, input: Partial<UpsertSalesChannelInput>) {
+  return apiRequest<{ message?: string; sales_channel: SalesChannel }>(`/sales-channels/${channelId}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteSalesChannel(channelId: string) {
+  return apiRequest<{ message?: string; id: string }>(`/sales-channels/${channelId}`, {
+    method: 'DELETE',
+  });
+}
+
 interface OnboardingChecklistResponse {
   count: number;
   completed?: number;
