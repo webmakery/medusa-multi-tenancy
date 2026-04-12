@@ -100,7 +100,7 @@ const StoreSettingsPage = () => {
 };
 
 export const config = defineRouteConfig({
-  label: 'admin.storeSettings.menuLabel',
+  label: 'Store settings',
 });
 
 export default StoreSettingsPage;

@@ -56,7 +56,7 @@ const OnboardingStatusPage = () => {
 };
 
 export const config = defineRouteConfig({
-  label: 'admin.onboarding.menuLabel',
+  label: 'Onboarding',
 });
 
 export default OnboardingStatusPage;

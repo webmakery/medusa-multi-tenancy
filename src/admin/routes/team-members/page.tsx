@@ -52,7 +52,7 @@ const TeamMembersPage = () => {
 };
 
 export const config = defineRouteConfig({
-  label: 'admin.teamMembers.menuLabel',
+  label: 'Team members',
 });
 
 export default TeamMembersPage;

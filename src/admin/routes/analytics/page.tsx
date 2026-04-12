@@ -153,7 +153,7 @@ const AnalyticsPage = () => {
 };
 
 export const config = defineRouteConfig({
-  label: 'admin.analytics.menuLabel',
+  label: 'Analytics',
 });
 
 export default AnalyticsPage;

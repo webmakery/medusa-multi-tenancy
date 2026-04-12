@@ -42,7 +42,7 @@ const SalesChannelsPage = () => {
 };
 
 export const config = defineRouteConfig({
-  label: 'admin.salesChannels.menuLabel',
+  label: 'Sales channels',
 });
 
 export default SalesChannelsPage;
