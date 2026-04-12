@@ -3,6 +3,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { TENANT_MANAGEMENT_MODULE } from '../../../modules/tenant-management';
 import TenantManagementModuleService from '../../../modules/tenant-management/service';
 import createTenantOnboardingWorkflow from '../../../workflows/tenant/create-tenant';
+import { requireIdempotencyKey } from '../../utils/idempotency';
 
 interface CreateTenantBody {
   name?: string;
@@ -17,20 +18,6 @@ function slugify(input: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60);
-}
-
-function getIdempotencyKey(req: MedusaRequest): string | null {
-  const value = req.headers['idempotency-key'];
-
-  if (typeof value === 'string' && value.trim()) {
-    return value.trim();
-  }
-
-  if (Array.isArray(value) && value[0]?.trim()) {
-    return value[0].trim();
-  }
-
-  return null;
 }
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -59,13 +46,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     });
   }
 
-  const idempotencyKey = getIdempotencyKey(req);
-
-  if (!idempotencyKey) {
-    return res.status(400).json({
-      message: 'idempotency-key header is required',
-    });
-  }
+  const idempotencyKey = requireIdempotencyKey(req, res);
+  if (!idempotencyKey) return;
 
   const slug = slugify(body.slug || body.name);
 

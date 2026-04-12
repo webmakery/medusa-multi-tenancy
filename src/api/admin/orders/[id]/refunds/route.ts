@@ -3,8 +3,12 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import handleOrderRefundWorkflow, {
   HandleOrderRefundWorkflowInput,
 } from '../../../../../workflows/orders/handle-refund';
+import { requireIdempotencyKey } from '../../../../utils/idempotency';
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  const idempotencyKey = requireIdempotencyKey(req, res);
+  if (!idempotencyKey) return;
+
   const body = (req.body || {}) as Partial<HandleOrderRefundWorkflowInput>;
 
   if (typeof body.amount !== 'number' || body.amount <= 0) {
@@ -20,6 +24,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       amount: body.amount,
       note: body.note,
       created_by: (req as any).auth_context?.actor_id,
+    },
+    context: {
+      idempotencyKey: `admin-order-refund:${req.params.id}:${idempotencyKey}`,
     },
   });
 
