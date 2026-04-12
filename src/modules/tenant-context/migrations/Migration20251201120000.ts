@@ -265,6 +265,80 @@ export class Migration20251201120000 extends Migration {
       COMMENT ON FUNCTION check_rls_status() IS 'Returns RLS status for all tables with RLS enabled';
     `);
 
+    // Step 5: Verify RLS migration state
+    await this.execute(`
+      DO $$
+      DECLARE
+        expected_table_count INTEGER;
+        verified_rls_table_count INTEGER;
+        missing_policy_count INTEGER;
+        current_user_is_superuser BOOLEAN;
+      BEGIN
+        -- Verify current application user is not superuser (superusers bypass RLS)
+        SELECT r.rolsuper
+        INTO current_user_is_superuser
+        FROM pg_roles r
+        WHERE r.rolname = current_user;
+
+        IF current_user_is_superuser THEN
+          RAISE EXCEPTION
+            'RLS verification failed: current_user "%" is superuser. Use a non-superuser app role so RLS is enforced.',
+            current_user;
+        END IF;
+
+        -- Count expected tables that actually exist in this database
+        SELECT COUNT(*)
+        INTO expected_table_count
+        FROM information_schema.tables t
+        WHERE t.table_schema = 'public'
+          AND t.table_name IN (${tables.map((table) => `'${table}'`).join(', ')});
+
+        -- Use helper function to verify RLS enabled on expected tables
+        SELECT COUNT(*)
+        INTO verified_rls_table_count
+        FROM check_rls_status() r
+        WHERE r.table_name IN (${tables.map((table) => `'${table}'`).join(', ')})
+          AND r.rls_enabled = true;
+
+        IF verified_rls_table_count <> expected_table_count THEN
+          RAISE EXCEPTION
+            'RLS verification failed: expected % tables with RLS enabled, but found %.',
+            expected_table_count,
+            verified_rls_table_count;
+        END IF;
+
+        -- Verify required policies exist for each expected table
+        WITH expected_tables AS (
+          SELECT t.table_name
+          FROM information_schema.tables t
+          WHERE t.table_schema = 'public'
+            AND t.table_name IN (${tables.map((table) => `'${table}'`).join(', ')})
+        ),
+        missing_policies AS (
+          SELECT 1
+          FROM expected_tables et
+          CROSS JOIN (
+            VALUES ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE')
+          ) AS required(cmd)
+          LEFT JOIN pg_policies p
+            ON p.schemaname = 'public'
+           AND p.tablename = et.table_name
+           AND p.policyname = et.table_name || '_tenant_isolation_' || lower(required.cmd)
+           AND p.cmd = required.cmd
+          WHERE p.policyname IS NULL
+        )
+        SELECT COUNT(*)
+        INTO missing_policy_count
+        FROM missing_policies;
+
+        IF missing_policy_count > 0 THEN
+          RAISE EXCEPTION
+            'RLS verification failed: % required tenant isolation policies are missing.',
+            missing_policy_count;
+        END IF;
+      END $$;
+    `);
+
     console.log('✓ RLS migration completed!');
     console.log('');
     console.log('To check RLS status, run:');
