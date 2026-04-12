@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 
 import { TENANT_MANAGEMENT_MODULE } from '../../../../modules/tenant-management';
 import TenantManagementModuleService, { TenantRole } from '../../../../modules/tenant-management/service';
+import { getActorEmail } from '../../_shared/auth-context';
 
 type TenantAction = 'invite' | 'manage_members' | 'deactivate_tenant';
 
@@ -10,30 +11,6 @@ const ACTION_PERMISSIONS: Record<TenantAction, TenantRole[]> = {
   manage_members: ['owner', 'admin'],
   deactivate_tenant: ['owner'],
 };
-
-function getActorEmail(req: MedusaRequest): string | null {
-  const authContext = (req as any).auth_context;
-
-  const possibleEmails = [
-    authContext?.actor_email,
-    authContext?.email,
-    authContext?.actor_id,
-    authContext?.actor?.email,
-    authContext?.auth_identity?.app_metadata?.email,
-    req.headers['x-user-email'],
-  ];
-
-  for (const value of possibleEmails) {
-    if (typeof value === 'string') {
-      const normalized = value.trim().toLowerCase();
-      if (normalized.includes('@')) {
-        return normalized;
-      }
-    }
-  }
-
-  return null;
-}
 
 export async function authorizeTenantAction(
   req: MedusaRequest,
