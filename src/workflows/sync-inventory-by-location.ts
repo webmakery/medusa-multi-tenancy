@@ -38,10 +38,16 @@ const splitInventoryLevelsStep = createStep(
       existingByInventoryItemId.set(level.inventory_item_id, { id: level.id });
     }
 
+    const latestLevelByInventoryItemId = new Map<string, InventorySyncInputLevel>();
+
+    for (const level of input.levels) {
+      latestLevelByInventoryItemId.set(level.inventory_item_id, level);
+    }
+
     const creates: InventoryTypes.CreateInventoryLevelInput[] = [];
     const updates: InventoryTypes.UpdateInventoryLevelInput[] = [];
 
-    for (const level of input.levels) {
+    for (const level of latestLevelByInventoryItemId.values()) {
       const existing = existingByInventoryItemId.get(level.inventory_item_id);
 
       if (existing) {
