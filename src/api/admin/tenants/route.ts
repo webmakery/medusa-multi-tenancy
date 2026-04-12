@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 
 import { TENANT_MANAGEMENT_MODULE } from '../../../modules/tenant-management';
 import TenantManagementModuleService from '../../../modules/tenant-management/service';
+import createTenantOnboardingWorkflow from '../../../workflows/tenant/create-tenant';
 
 interface CreateTenantBody {
   name?: string;
@@ -18,6 +19,20 @@ function slugify(input: string): string {
     .slice(0, 60);
 }
 
+function getIdempotencyKey(req: MedusaRequest): string | null {
+  const value = req.headers['idempotency-key'];
+
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+
+  if (Array.isArray(value) && value[0]?.trim()) {
+    return value[0].trim();
+  }
+
+  return null;
+}
+
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const tenantManagementService: TenantManagementModuleService = req.scope.resolve(TENANT_MANAGEMENT_MODULE);
 
@@ -30,8 +45,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const tenantManagementService: TenantManagementModuleService = req.scope.resolve(TENANT_MANAGEMENT_MODULE);
-
   const body = (req.body || {}) as CreateTenantBody;
 
   if (!body.name?.trim()) {
@@ -46,6 +59,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     });
   }
 
+  const idempotencyKey = getIdempotencyKey(req);
+
+  if (!idempotencyKey) {
+    return res.status(400).json({
+      message: 'idempotency-key header is required',
+    });
+  }
+
   const slug = slugify(body.slug || body.name);
 
   if (!slug) {
@@ -55,20 +76,22 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   try {
-    const tenant = await tenantManagementService.createTenant({
-      name: body.name.trim(),
-      slug,
-      owner_email: body.owner_email.trim().toLowerCase(),
+    const { result } = await createTenantOnboardingWorkflow(req.scope).run({
+      input: {
+        name: body.name.trim(),
+        slug,
+        owner_email: body.owner_email.trim().toLowerCase(),
+      },
+      context: {
+        idempotencyKey: `admin-tenants:${idempotencyKey}`,
+      },
     });
 
     res.status(201).json({
-      tenant,
-      onboarding_checklist: [
-        'Create admin user and assign tenant owner role',
-        'Configure store profile (name, support email, currency)',
-        'Create first sales channel and default catalog',
-        'Connect payment provider and shipping profile',
-      ],
+      tenant: result.tenant,
+      owner_membership_id: result.owner_membership_id,
+      default_sales_channel: result.default_sales_channel,
+      store: result.store,
     });
   } catch (error: any) {
     if (error.message?.includes('already exists')) {
