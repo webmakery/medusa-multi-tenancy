@@ -158,6 +158,41 @@ const en = {
         review_launch_readiness: 'Review launch readiness',
       },
     },
+    analytics: {
+      menuLabel: 'Analytics',
+      title: 'Analytics overview',
+      description: 'Review daily KPIs and top-performing products for a selected date range.',
+      filters: {
+        title: 'Filters',
+        from: 'From',
+        to: 'To',
+        limit: 'Top products limit',
+      },
+      sections: {
+        timeseries: 'Daily timeseries',
+        topProducts: 'Top products',
+      },
+      columns: {
+        date: 'Date',
+        gmv: 'GMV',
+        aov: 'AOV',
+        orders: 'Orders',
+        sessions: 'Sessions',
+        checkoutStarted: 'Checkouts started',
+        checkoutCompleted: 'Checkouts completed',
+        conversion: 'Conversion',
+        rank: 'Rank',
+        product: 'Product',
+        quantity: 'Quantity sold',
+      },
+      empty: {
+        timeseries: 'No timeseries analytics data is available for this date range.',
+        topProducts: 'No top products were found for this date range.',
+      },
+      errors: {
+        load: 'Could not load analytics data.',
+      },
+    },
   },
 };
 
