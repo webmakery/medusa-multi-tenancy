@@ -26,6 +26,11 @@ interface PublishEventInput {
   data: Record<string, unknown>;
 }
 
+interface InboundWebhookVerificationInput {
+  nonce: string;
+  timestamp: string;
+}
+
 class AppsModuleService extends MedusaService({
   AppInstallation,
   AppScope,
@@ -46,6 +51,10 @@ class AppsModuleService extends MedusaService({
 
   private signPayload(payload: string, secret: string) {
     return createHmac('sha256', secret).update(payload).digest('hex');
+  }
+
+  private createInboundSignaturePayload(rawBody: string, input: InboundWebhookVerificationInput) {
+    return `${input.timestamp}.${input.nonce}.${rawBody}`;
   }
 
   async installApp(input: InstallAppInput) {
@@ -219,7 +228,12 @@ class AppsModuleService extends MedusaService({
     };
   }
 
-  async verifyInboundWebhook(appId: string, rawBody: string, signature: string) {
+  async verifyInboundWebhook(
+    appId: string,
+    rawBody: string,
+    signature: string,
+    input: InboundWebhookVerificationInput
+  ) {
     const knex = this.getKnex();
 
     const credential = await knex('app_credential').where({ app_id: appId, is_active: true }).orderBy('created_at', 'desc').first();
@@ -229,7 +243,8 @@ class AppsModuleService extends MedusaService({
     }
 
     const provided = signature.startsWith('sha256=') ? signature.slice(7) : signature;
-    const expected = this.signPayload(rawBody, credential.secret);
+    const signedPayload = this.createInboundSignaturePayload(rawBody, input);
+    const expected = this.signPayload(signedPayload, credential.secret);
 
     const expectedBuffer = Buffer.from(expected, 'hex');
     const providedBuffer = Buffer.from(provided, 'hex');

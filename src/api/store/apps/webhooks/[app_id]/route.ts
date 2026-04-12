@@ -125,7 +125,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   const appsService: AppsModuleService = req.scope.resolve(APPS_MODULE);
-  const isValid = await appsService.verifyInboundWebhook(appId, rawBody, signature);
+  const isValid = await appsService.verifyInboundWebhook(appId, rawBody, signature, {
+    nonce,
+    timestamp: timestampHeader,
+  });
 
   if (!isValid) {
     await auditWebhookFailure(req, appId, 'invalid_signature');
