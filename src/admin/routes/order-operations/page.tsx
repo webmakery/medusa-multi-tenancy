@@ -224,7 +224,7 @@ const OrderOperationsPage = () => {
 };
 
 export const config = defineRouteConfig({
-  label: 'admin.orderOps.menuLabel',
+  label: 'Order operations',
 });
 
 export default OrderOperationsPage;

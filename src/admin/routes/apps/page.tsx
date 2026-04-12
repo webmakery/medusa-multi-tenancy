@@ -234,7 +234,7 @@ const AppsPage = () => {
 };
 
 export const config = defineRouteConfig({
-  label: 'admin.apps.menuLabel',
+  label: 'Apps',
 });
 
 export default AppsPage;
