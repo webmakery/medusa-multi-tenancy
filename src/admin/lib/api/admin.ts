@@ -54,6 +54,26 @@ export interface AppWebhookDeliveryLog {
   delivered_at: string;
 }
 
+export interface AnalyticsTimeseriesPoint {
+  date: string;
+  gmv_cents: number;
+  aov_cents: number;
+  orders_count: number;
+  sessions_count: number;
+  checkout_started_count: number;
+  checkout_completed_count: number;
+  conversion_proxy: number;
+  currency_code?: string | null;
+}
+
+export interface AnalyticsTopProduct {
+  rank: number;
+  product_id: string;
+  product_title?: string | null;
+  quantity: number;
+  gmv_cents: number;
+}
+
 export class AdminApiError extends Error {
   status: number;
 
@@ -329,4 +349,56 @@ interface WebhookDeliveryLogsResponse {
 
 export async function getWebhookDeliveryLogs(appId: string, limit = 50) {
   return apiRequest<WebhookDeliveryLogsResponse>(`/apps/${appId}/webhook-deliveries?limit=${limit}`);
+}
+
+interface AnalyticsTimeseriesResponse {
+  tenant_id: string;
+  from?: string;
+  to?: string;
+  granularity: 'day';
+  data: AnalyticsTimeseriesPoint[];
+}
+
+interface AnalyticsTopProductsResponse {
+  tenant_id: string;
+  from?: string;
+  to?: string;
+  data: AnalyticsTopProduct[];
+}
+
+interface AnalyticsRangeInput {
+  from?: string;
+  to?: string;
+}
+
+function buildQuery(input: AnalyticsRangeInput & { limit?: number }) {
+  const query = new URLSearchParams();
+
+  if (input.from) {
+    query.set('from', input.from);
+  }
+
+  if (input.to) {
+    query.set('to', input.to);
+  }
+
+  if (typeof input.limit === 'number') {
+    query.set('limit', String(input.limit));
+  }
+
+  return query.toString();
+}
+
+export async function getAnalyticsTimeseries(input: AnalyticsRangeInput = {}) {
+  const query = buildQuery(input);
+  const path = query ? `/analytics/timeseries?${query}` : '/analytics/timeseries';
+
+  return apiRequest<AnalyticsTimeseriesResponse>(path);
+}
+
+export async function getAnalyticsTopProducts(input: AnalyticsRangeInput & { limit?: number } = {}) {
+  const query = buildQuery(input);
+  const path = query ? `/analytics/top-products?${query}` : '/analytics/top-products';
+
+  return apiRequest<AnalyticsTopProductsResponse>(path);
 }
