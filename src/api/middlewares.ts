@@ -3,7 +3,6 @@ import { randomUUID } from 'crypto';
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { defineMiddlewares } from '@medusajs/framework/http';
 
-import { appWebhookSignatureVerificationMiddleware } from '../modules/apps/middleware';
 import { tenantContextMiddleware, tenantContextStorage } from '../modules/tenant-context/middleware';
 
 const CORRELATION_ID_HEADER = 'x-correlation-id';
@@ -124,7 +123,6 @@ export default defineMiddlewares({
         tenantContextMiddleware,
         tenantIpRateLimitMiddleware,
         structuredErrorLoggingMiddleware,
-        appWebhookSignatureVerificationMiddleware,
       ],
     },
     {
