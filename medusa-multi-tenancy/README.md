@@ -121,6 +121,29 @@ const products = await productService.list()
 
 ---
 
+## Tenant Onboarding API (MVP)
+
+You can now provision tenant records from an admin endpoint.
+
+### Create tenant
+
+```bash
+curl -X POST http://localhost:9000/admin/tenants \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Acme Store",
+    "owner_email": "owner@acme.com"
+  }'
+```
+
+### List tenants
+
+```bash
+curl http://localhost:9000/admin/tenants
+```
+
+This creates/uses a `tenant` table and returns an onboarding checklist for next setup actions.
+
 ## Quick Start
 
 ```bash
