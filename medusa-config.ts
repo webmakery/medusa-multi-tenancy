@@ -1,5 +1,6 @@
 import { loadEnv, defineConfig } from '@medusajs/framework/utils'
 import { TENANT_CONTEXT_MODULE } from './src/modules/tenant-context'
+import { TENANT_MANAGEMENT_MODULE } from './src/modules/tenant-management'
 
 loadEnv(process.env.NODE_ENV || 'development', process.cwd())
 
@@ -22,6 +23,9 @@ module.exports = defineConfig({
   modules: {
     [TENANT_CONTEXT_MODULE]: {
       resolve: './modules/tenant-context',
+    },
+    [TENANT_MANAGEMENT_MODULE]: {
+      resolve: './modules/tenant-management',
     },
   },
 })
