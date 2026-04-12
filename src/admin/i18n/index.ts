@@ -53,6 +53,47 @@ const en = {
         load: 'Could not load sales channels.',
       },
     },
+
+    orderOps: {
+      menuLabel: 'Order operations',
+      title: 'Order operations',
+      description: 'Run auditable order operations and inspect a unified timeline.',
+      emptyTimeline: 'No timeline events found for this order yet.',
+      sections: {
+        fulfillment: 'Fulfillment creation',
+        tracking: 'Tracking updates',
+        refund: 'Refund handling',
+        returns: 'Returns lifecycle',
+        timeline: 'Order timeline',
+      },
+      actions: {
+        loadTimeline: 'Load timeline',
+        createFulfillment: 'Create fulfillment',
+        updateTracking: 'Update tracking',
+        createRefund: 'Create refund',
+        beginReturn: 'Run return action',
+      },
+      fields: {
+        orderId: 'Order ID',
+        locationId: 'Location ID',
+        itemId: 'Order item ID',
+        fulfillmentId: 'Fulfillment ID',
+        trackingNumber: 'Tracking number',
+        trackingUrl: 'Tracking URL',
+        paymentId: 'Payment ID (optional)',
+        refundNote: 'Refund note',
+      },
+      messages: {
+        timelineLoaded: 'Timeline loaded.',
+        fulfillmentCreated: 'Fulfillment created.',
+        trackingUpdated: 'Tracking updated.',
+        refundCreated: 'Refund created.',
+        returnUpdated: 'Return lifecycle action completed.',
+      },
+      errors: {
+        default: 'Order operation failed.',
+      },
+    },
     onboarding: {
       menuLabel: 'Onboarding',
       title: 'Onboarding checklist',
