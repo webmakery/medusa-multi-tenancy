@@ -2,6 +2,7 @@ import { loadEnv, defineConfig } from '@medusajs/framework/utils'
 import { TENANT_CONTEXT_MODULE } from './src/modules/tenant-context'
 import { TENANT_MANAGEMENT_MODULE } from './src/modules/tenant-management'
 import { THEME_MODULE } from './src/modules/theme'
+import { APPS_MODULE } from './src/modules/apps'
 
 loadEnv(process.env.NODE_ENV || 'development', process.cwd())
 
@@ -30,6 +31,9 @@ module.exports = defineConfig({
     },
     [THEME_MODULE]: {
       resolve: './modules/theme',
+    },
+    [APPS_MODULE]: {
+      resolve: './modules/apps',
     },
   },
 })
