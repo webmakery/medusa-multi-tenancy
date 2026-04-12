@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 
 import { getTenantIdFromRequest } from '../../utils/tenant';
+import { requireIdempotencyKey } from '../../utils/idempotency';
 import { APPS_MODULE } from '../../../modules/apps';
 import AppsModuleService from '../../../modules/apps/service';
 
@@ -29,6 +30,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  const _idempotencyKey = requireIdempotencyKey(req, res);
+  if (!_idempotencyKey) return;
+
   const tenantId = getTenantIdFromRequest(req);
 
   if (!tenantId) {

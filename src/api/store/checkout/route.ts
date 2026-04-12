@@ -3,9 +3,13 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import checkoutWorkflow, { CheckoutWorkflowInput } from '../../../workflows/checkout';
 import { ANALYTICS_MODULE } from '../../../modules/analytics';
 import AnalyticsModuleService from '../../../modules/analytics/service';
+import { requireIdempotencyKey } from '../../utils/idempotency';
 import { getTenantIdFromRequest } from '../../utils/tenant';
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  const idempotencyKey = requireIdempotencyKey(req, res);
+  if (!idempotencyKey) return;
+
   const body = (req.body || {}) as Partial<CheckoutWorkflowInput>;
 
   if (!body.cart) {
@@ -46,6 +50,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   const { result } = await checkoutWorkflow(req.scope).run({
     input: body as CheckoutWorkflowInput,
+    context: {
+      idempotencyKey: `store-checkout:${idempotencyKey}`,
+    },
   });
 
   if (tenantId) {

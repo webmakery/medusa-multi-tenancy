@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 
 import { TENANT_MANAGEMENT_MODULE } from '../../../../../modules/tenant-management';
 import TenantManagementModuleService from '../../../../../modules/tenant-management/service';
+import { requireIdempotencyKey } from '../../../../utils/idempotency';
 import { authorizeTenantAction } from '../../_shared/authorization';
 
 interface InviteBody {
@@ -12,6 +13,9 @@ interface InviteBody {
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  const _idempotencyKey = requireIdempotencyKey(req, res);
+  if (!_idempotencyKey) return;
+
   const tenantManagementService: TenantManagementModuleService = req.scope.resolve(TENANT_MANAGEMENT_MODULE);
 
   const body = (req.body || {}) as InviteBody;
