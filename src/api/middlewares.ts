@@ -6,7 +6,7 @@ import { appWebhookSignatureVerificationMiddleware } from '../modules/apps/middl
 export default defineMiddlewares({
   routes: [
     {
-      matcher: '/store/apps/webhooks/*',
+      matcher: '/store/apps/webhooks/:app_id',
       middlewares: [tenantContextMiddleware, appWebhookSignatureVerificationMiddleware],
     },
     {
@@ -15,4 +15,3 @@ export default defineMiddlewares({
     },
   ],
 });
-

@@ -44,7 +44,7 @@ class AppsModuleService extends MedusaService({
     return `app_key_${randomBytes(8).toString('hex')}`;
   }
 
-  private signPayload(payload: string, secret: string) {
+  private signPayload(payload: string | Buffer, secret: string) {
     return createHmac('sha256', secret).update(payload).digest('hex');
   }
 
@@ -219,7 +219,7 @@ class AppsModuleService extends MedusaService({
     };
   }
 
-  async verifyInboundWebhook(appId: string, rawBody: string, signature: string) {
+  async verifyInboundWebhook(appId: string, rawBody: string | Buffer, signature: string) {
     const knex = this.getKnex();
 
     const credential = await knex('app_credential').where({ app_id: appId, is_active: true }).orderBy('created_at', 'desc').first();

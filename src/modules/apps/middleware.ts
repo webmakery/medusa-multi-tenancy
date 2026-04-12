@@ -19,7 +19,12 @@ export async function appWebhookSignatureVerificationMiddleware(
     return res.status(401).json({ message: 'x-app-signature header is required.' });
   }
 
-  const rawBody = typeof req.rawBody === 'string' ? req.rawBody : JSON.stringify(req.body || {});
+  const rawBody =
+    req.rawBody instanceof Buffer
+      ? req.rawBody
+      : typeof req.rawBody === 'string'
+        ? Buffer.from(req.rawBody)
+        : Buffer.from(JSON.stringify(req.body || {}));
 
   const appsModuleService: AppsModuleService = req.scope.resolve(APPS_MODULE);
   const isValid = await appsModuleService.verifyInboundWebhook(appId, rawBody, signature);
