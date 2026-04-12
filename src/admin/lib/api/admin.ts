@@ -28,6 +28,32 @@ export interface OnboardingChecklistItem {
   is_completed: boolean;
 }
 
+export interface AppWebhook {
+  event_name: string;
+  target_url: string;
+}
+
+export interface InstalledApp {
+  id: string;
+  app_name: string;
+  app_identifier: string;
+  app_url?: string | null;
+  installed_at: string;
+  scopes: string[];
+  webhooks: AppWebhook[];
+}
+
+export interface AppWebhookDeliveryLog {
+  id: string;
+  event_name: string;
+  target_url: string;
+  delivery_status: 'delivered' | 'failed';
+  attempt_number: number;
+  response_status?: number | null;
+  error_message?: string | null;
+  delivered_at: string;
+}
+
 export class AdminApiError extends Error {
   status: number;
 
@@ -262,4 +288,45 @@ export async function runReturnLifecycle(orderId: string, input: RunReturnLifecy
     method: 'POST',
     body: JSON.stringify(input),
   });
+}
+
+interface AppsResponse {
+  count: number;
+  apps: InstalledApp[];
+}
+
+export async function getInstalledApps() {
+  return apiRequest<AppsResponse>('/apps');
+}
+
+interface InstallAppInput {
+  app_name: string;
+  app_identifier: string;
+  app_url?: string;
+  scopes: string[];
+}
+
+export async function installApp(input: InstallAppInput) {
+  return apiRequest<{ message?: string; app: { app_id: string; scopes: string[] } }>('/apps', {
+    method: 'POST',
+    headers: {
+      'Idempotency-Key': `apps-install-${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function uninstallApp(appId: string) {
+  return apiRequest<{ message?: string; app_id: string }>(`/apps/${appId}`, {
+    method: 'DELETE',
+  });
+}
+
+interface WebhookDeliveryLogsResponse {
+  count: number;
+  logs: AppWebhookDeliveryLog[];
+}
+
+export async function getWebhookDeliveryLogs(appId: string, limit = 50) {
+  return apiRequest<WebhookDeliveryLogsResponse>(`/apps/${appId}/webhook-deliveries?limit=${limit}`);
 }

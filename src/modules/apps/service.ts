@@ -8,8 +8,10 @@ import AppCredential from './models/app-credential';
 import AppInstallation from './models/app-installation';
 import AppScope from './models/app-scope';
 import AppWebhook from './models/app-webhook';
+import AppWebhookDeliveryLog from './models/app-webhook-delivery-log';
 
 const DEFAULT_EVENTS = ['order.created', 'product.updated', 'customer.created'];
+const MAX_WEBHOOK_DELIVERY_ATTEMPTS = 3;
 
 interface InstallAppInput {
   tenant_id: string;
@@ -31,6 +33,7 @@ class AppsModuleService extends MedusaService({
   AppScope,
   AppWebhook,
   AppCredential,
+  AppWebhookDeliveryLog,
 }) {
   private getKnex(): Knex {
     return (this as any).__container__.resolve(ContainerRegistrationKeys.PG_CONNECTION) as Knex;
@@ -277,21 +280,62 @@ class AppsModuleService extends MedusaService({
       subscriptions.map(async (subscription) => {
         const signature = this.signPayload(payload, subscription.secret);
 
-        await fetch(subscription.target_url, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-app-id': subscription.app_id,
-            'x-app-key': subscription.key_id,
-            'x-app-signature': `sha256=${signature}`,
-            'x-tenant-id': subscription.tenant_id,
-          },
-          body: payload,
-        });
+        for (let attempt = 1; attempt <= MAX_WEBHOOK_DELIVERY_ATTEMPTS; attempt += 1) {
+          let deliveryStatus = 'failed';
+          let responseStatus: number | null = null;
+          let errorMessage: string | null = null;
+
+          try {
+            const response = await fetch(subscription.target_url, {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                'x-app-id': subscription.app_id,
+                'x-app-key': subscription.key_id,
+                'x-app-signature': `sha256=${signature}`,
+                'x-tenant-id': subscription.tenant_id,
+              },
+              body: payload,
+            });
+
+            responseStatus = response.status;
+            deliveryStatus = response.ok ? 'delivered' : 'failed';
+            errorMessage = response.ok ? null : `Received non-success response: ${response.status}`;
+          } catch (error: any) {
+            errorMessage = error?.message || 'Webhook delivery failed.';
+          }
+
+          await knex('app_webhook_delivery_log').insert({
+            id: randomUUID(),
+            tenant_id: subscription.tenant_id,
+            app_id: subscription.app_id,
+            event_name: input.event_name,
+            target_url: subscription.target_url,
+            delivery_status: deliveryStatus,
+            attempt_number: attempt,
+            response_status: responseStatus,
+            error_message: errorMessage,
+            delivered_at: knex.fn.now(),
+          });
+
+          if (deliveryStatus === 'delivered') {
+            break;
+          }
+        }
       })
     );
 
     return { delivered: subscriptions.length };
+  }
+
+  async listWebhookDeliveryLogs(tenantId: string, appId: string, limit = 50) {
+    const knex = this.getKnex();
+    const normalizedLimit = Number.isFinite(limit) ? Math.min(Math.max(Math.floor(limit), 1), 200) : 50;
+
+    return knex('app_webhook_delivery_log')
+      .where({ tenant_id: tenantId, app_id: appId })
+      .orderBy('delivered_at', 'desc')
+      .limit(normalizedLimit);
   }
 }
 
