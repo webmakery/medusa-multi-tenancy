@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 
 import { TENANT_MANAGEMENT_MODULE } from '../../../modules/tenant-management';
 import TenantManagementModuleService from '../../../modules/tenant-management/service';
+import { resolveAuthenticatedTenantAccess } from '../_shared/tenant-access';
 
 interface OnboardingChecklistItem {
   key: string;
@@ -11,11 +12,14 @@ interface OnboardingChecklistItem {
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const tenantManagementService: TenantManagementModuleService = req.scope.resolve(TENANT_MANAGEMENT_MODULE);
+  const tenantAccess = await resolveAuthenticatedTenantAccess(req);
 
-  const [tenant] = await tenantManagementService.listTenants();
-  const members = tenant?.tenant_id
-    ? await tenantManagementService.listTenantMembers(tenant.tenant_id)
-    : [];
+  if (tenantAccess.error) {
+    return res.status(tenantAccess.error.status).json({ message: tenantAccess.error.message });
+  }
+
+  const tenant = await tenantManagementService.retrieveTenant(tenantAccess.tenantId!);
+  const members = await tenantManagementService.listTenantMembers(tenantAccess.tenantId!);
 
   const checklist: OnboardingChecklistItem[] = [
     {
@@ -36,7 +40,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     {
       key: 'review_launch_readiness',
       label: 'Review launch readiness',
-      is_completed: Boolean(tenant),
+      is_completed: Boolean(tenant?.tenant_id),
     },
   ];
 

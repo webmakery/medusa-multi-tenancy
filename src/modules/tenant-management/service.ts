@@ -41,6 +41,15 @@ class TenantManagementModuleService extends MedusaService({
       .orderBy('created_at', 'desc');
   }
 
+  async retrieveTenant(tenantId: string) {
+    const knex = this.getKnex();
+
+    return knex('tenant')
+      .select('id', 'tenant_id', 'name', 'slug', 'owner_email', 'status', 'created_at', 'updated_at')
+      .where({ tenant_id: tenantId })
+      .first();
+  }
+
   async createTenant(input: { name: string; slug: string; owner_email: string }) {
     const knex = this.getKnex();
 

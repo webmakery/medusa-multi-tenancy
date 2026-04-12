@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 
 import { TENANT_MANAGEMENT_MODULE } from '../../../../modules/tenant-management';
 import TenantManagementModuleService from '../../../../modules/tenant-management/service';
+import { resolveAuthenticatedTenantAccess } from '../../_shared/tenant-access';
 
 interface UpdateStoreSettingsBody {
   store_name?: string;
@@ -16,7 +17,13 @@ function normalizeCurrency(code?: string): string {
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const tenantManagementService: TenantManagementModuleService = req.scope.resolve(TENANT_MANAGEMENT_MODULE);
-  const [tenant] = await tenantManagementService.listTenants();
+  const tenantAccess = await resolveAuthenticatedTenantAccess(req);
+
+  if (tenantAccess.error) {
+    return res.status(tenantAccess.error.status).json({ message: tenantAccess.error.message });
+  }
+
+  const tenant = await tenantManagementService.retrieveTenant(tenantAccess.tenantId!);
 
   res.status(200).json({
     settings: {
