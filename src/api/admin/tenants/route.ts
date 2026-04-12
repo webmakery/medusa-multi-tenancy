@@ -1,9 +1,7 @@
-import { randomUUID } from 'crypto';
-
-import type { Knex } from 'knex';
-
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+
+import { TENANT_MANAGEMENT_MODULE } from '../../../modules/tenant-management';
+import TenantManagementModuleService from '../../../modules/tenant-management/service';
 
 interface CreateTenantBody {
   name?: string;
@@ -20,31 +18,10 @@ function slugify(input: string): string {
     .slice(0, 60);
 }
 
-async function ensureTenantTable(knex: Knex): Promise<void> {
-  await knex.raw(`
-    CREATE TABLE IF NOT EXISTS tenant (
-      id UUID PRIMARY KEY,
-      slug VARCHAR(64) UNIQUE NOT NULL,
-      name VARCHAR(255) NOT NULL,
-      owner_email VARCHAR(255) NOT NULL,
-      status VARCHAR(32) NOT NULL DEFAULT 'active',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_tenant_slug ON tenant(slug);
-    CREATE INDEX IF NOT EXISTS idx_tenant_owner_email ON tenant(owner_email);
-  `);
-}
-
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const knex = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as Knex;
+  const tenantManagementService: TenantManagementModuleService = req.scope.resolve(TENANT_MANAGEMENT_MODULE);
 
-  await ensureTenantTable(knex);
-
-  const tenants = await knex('tenant')
-    .select('id', 'name', 'slug', 'owner_email', 'status', 'created_at')
-    .orderBy('created_at', 'desc');
+  const tenants = await tenantManagementService.listTenants();
 
   res.status(200).json({
     count: tenants.length,
@@ -53,9 +30,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const knex = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as Knex;
-
-  await ensureTenantTable(knex);
+  const tenantManagementService: TenantManagementModuleService = req.scope.resolve(TENANT_MANAGEMENT_MODULE);
 
   const body = (req.body || {}) as CreateTenantBody;
 
@@ -79,31 +54,27 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     });
   }
 
-  const existingTenant = await knex('tenant').where({ slug }).first();
-
-  if (existingTenant) {
-    return res.status(409).json({
-      message: `A tenant with slug "${slug}" already exists.`,
+  try {
+    const tenant = await tenantManagementService.createTenant({
+      name: body.name.trim(),
+      slug,
+      owner_email: body.owner_email.trim().toLowerCase(),
     });
+
+    res.status(201).json({
+      tenant,
+      onboarding_checklist: [
+        'Create admin user and assign tenant owner role',
+        'Configure store profile (name, support email, currency)',
+        'Create first sales channel and default catalog',
+        'Connect payment provider and shipping profile',
+      ],
+    });
+  } catch (error: any) {
+    if (error.message?.includes('already exists')) {
+      return res.status(409).json({ message: error.message });
+    }
+
+    throw error;
   }
-
-  const tenant = {
-    id: randomUUID(),
-    name: body.name.trim(),
-    slug,
-    owner_email: body.owner_email.trim().toLowerCase(),
-    status: 'active',
-  };
-
-  await knex('tenant').insert(tenant);
-
-  res.status(201).json({
-    tenant,
-    onboarding_checklist: [
-      'Create admin user and assign tenant owner role',
-      'Configure store profile (name, support email, currency)',
-      'Create first sales channel and default catalog',
-      'Connect payment provider and shipping profile',
-    ],
-  });
 }
