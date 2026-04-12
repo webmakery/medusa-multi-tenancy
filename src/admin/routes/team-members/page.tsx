@@ -13,9 +13,9 @@ const TeamMembersPage = () => {
   useEffect(() => {
     getTeamMembers()
       .then((response) => setMembers(response.members))
-      .catch((err: Error) => setError(err.message))
+      .catch((err: Error) => setError(err.message || t('admin.teamMembers.errors.load')))
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [t]);
 
   return (
     <div style={{ padding: '1.5rem' }}>
@@ -23,11 +23,11 @@ const TeamMembersPage = () => {
       <p>{t('admin.teamMembers.description')}</p>
 
       {isLoading ? <p>{t('admin.shared.loading')}</p> : null}
-      {error ? <p>{error}</p> : null}
+      {!isLoading && error ? <p>{error}</p> : null}
 
-      {!isLoading && !members.length ? <p>{t('admin.teamMembers.empty')}</p> : null}
+      {!isLoading && !error && !members.length ? <p>{t('admin.teamMembers.empty')}</p> : null}
 
-      {!isLoading && members.length ? (
+      {!isLoading && !error && members.length ? (
         <table>
           <thead>
             <tr>

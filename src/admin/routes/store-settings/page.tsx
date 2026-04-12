@@ -23,9 +23,11 @@ const StoreSettingsPage = () => {
       .then((response) => {
         setSettings(response.settings);
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: Error) => {
+        setError(err.message || t('admin.storeSettings.errors.load'));
+      })
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [t]);
 
   const onSave = async (event: FormEvent) => {
     event.preventDefault();
@@ -36,9 +38,9 @@ const StoreSettingsPage = () => {
     try {
       const response = await updateStoreSettings(settings);
       setSettings(response.settings);
-      setMessage(response.message);
+      setMessage(response.message || t('admin.storeSettings.success.saved'));
     } catch (err) {
-      setError((err as Error).message);
+      setError((err as Error).message || t('admin.storeSettings.errors.save'));
     }
   };
 
@@ -47,9 +49,11 @@ const StoreSettingsPage = () => {
       <h1>{t('admin.storeSettings.title')}</h1>
       <p>{t('admin.storeSettings.description')}</p>
 
-      {isLoading ? (
-        <p>{t('admin.shared.loading')}</p>
-      ) : (
+      {isLoading ? <p>{t('admin.shared.loading')}</p> : null}
+
+      {!isLoading && error ? <p>{error}</p> : null}
+
+      {!isLoading && !error ? (
         <form onSubmit={onSave}>
           <label>
             {t('admin.storeSettings.fields.storeName')}
@@ -88,10 +92,9 @@ const StoreSettingsPage = () => {
           <br />
           <button type="submit">{t('admin.storeSettings.actions.save')}</button>
         </form>
-      )}
+      ) : null}
 
       {message ? <p>{message}</p> : null}
-      {error ? <p>{error}</p> : null}
     </div>
   );
 };

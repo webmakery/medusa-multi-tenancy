@@ -13,9 +13,9 @@ const SalesChannelsPage = () => {
   useEffect(() => {
     getSalesChannels()
       .then((response) => setChannels(response.sales_channels))
-      .catch((err: Error) => setError(err.message))
+      .catch((err: Error) => setError(err.message || t('admin.salesChannels.errors.load')))
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [t]);
 
   return (
     <div style={{ padding: '1.5rem' }}>
@@ -23,13 +23,16 @@ const SalesChannelsPage = () => {
       <p>{t('admin.salesChannels.description')}</p>
 
       {isLoading ? <p>{t('admin.shared.loading')}</p> : null}
-      {error ? <p>{error}</p> : null}
+      {!isLoading && error ? <p>{error}</p> : null}
 
-      {!isLoading && channels.length ? (
+      {!isLoading && !error && !channels.length ? <p>{t('admin.salesChannels.empty')}</p> : null}
+
+      {!isLoading && !error && channels.length ? (
         <ul>
           {channels.map((channel) => (
             <li key={channel.id}>
-              <strong>{channel.name}</strong> — {channel.description} ({channel.is_enabled ? 'enabled' : 'disabled'})
+              <strong>{channel.name}</strong> — {channel.description}{' '}
+              ({channel.is_enabled ? t('admin.salesChannels.status.enabled') : t('admin.salesChannels.status.disabled')})
             </li>
           ))}
         </ul>

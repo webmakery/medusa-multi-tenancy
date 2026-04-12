@@ -17,9 +17,9 @@ const OnboardingStatusPage = () => {
         setChecklist(response.checklist);
         setCompletedCount(response.completed);
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: Error) => setError(err.message || t('admin.onboarding.errors.load')))
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [t]);
 
   return (
     <div style={{ padding: '1.5rem' }}>
@@ -27,9 +27,9 @@ const OnboardingStatusPage = () => {
       <p>{t('admin.onboarding.description')}</p>
 
       {isLoading ? <p>{t('admin.shared.loading')}</p> : null}
-      {error ? <p>{error}</p> : null}
+      {!isLoading && error ? <p>{error}</p> : null}
 
-      {!isLoading ? (
+      {!isLoading && !error ? (
         <>
           <p>
             {t('admin.onboarding.progress', {
@@ -37,13 +37,18 @@ const OnboardingStatusPage = () => {
               total: checklist.length,
             })}
           </p>
-          <ul>
-            {checklist.map((item) => (
-              <li key={item.key}>
-                {item.is_completed ? '✅' : '⬜'} {item.label}
-              </li>
-            ))}
-          </ul>
+
+          {checklist.length ? (
+            <ul>
+              {checklist.map((item) => (
+                <li key={item.key}>
+                  {item.is_completed ? '✅' : '⬜'} {t(`admin.onboarding.items.${item.key}`, item.label || item.key)}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>{t('admin.shared.noData')}</p>
+          )}
         </>
       ) : null}
     </div>
