@@ -1,0 +1,111 @@
+diff --git a/node_modules/@medusajs/framework/dist/database/pg-connection-loader.js b/node_modules/@medusajs/framework/dist/database/pg-connection-loader.js
+index 94ebc88..95bb245 100644
+--- a/node_modules/@medusajs/framework/dist/database/pg-connection-loader.js
++++ b/node_modules/@medusajs/framework/dist/database/pg-connection-loader.js
+@@ -53,6 +53,106 @@ async function pgConnectionLoader() {
+             logger_1.logger.warn(`Pg connection failed to connect to the database. Retrying...\n${(0, utils_1.stringifyCircular)(error)}`);
+         },
+     });
++
++    // ============================================================================
++    // NAZARE RLS PATCH: Add Row Level Security support via query hooks
++    // ============================================================================
++    try {
++        logger_1.logger.info('[RLS_PATCH] Initializing Row Level Security hooks on Knex connection');
++
++        // Get tenant_id from AsyncLocalStorage context
++        function getTenantIdFromContext() {
++            try {
++                const path = require('path');
++                const tenantContextModule = require(path.join(process.cwd(), 'src/modules/tenant-context/middleware'));
++                const store = tenantContextModule?.tenantContextStorage?.getStore();
++                return store?.tenantId || null;
++            } catch (error) {
++                // If module not available, return null (admin/system mode)
++                logger_1.logger.debug(`[RLS_PATCH] Could not load tenant context: ${error.message}`);
++                return null;
++            }
++        }
++
++        // Track tenant_id per connection to avoid redundant set_config calls (optimization)
++        const connectionTenantMap = new WeakMap();
++
++        // Set tenant context on a connection
++        async function setTenantContextOnConnection(connection, tenantId) {
++            if (!connection) {
++                return;
++            }
++
++            const lastTenantId = connectionTenantMap.get(connection);
++
++            // Only set if tenant_id changed or not set yet (optimization)
++            if (lastTenantId !== tenantId) {
++                try {
++                    if (tenantId) {
++                        // Use set_config with session-level scope (false = session, true = transaction-local)
++                        await connection.query("SELECT set_config('app.current_tenant', $1, false)", [tenantId]);
++                        connectionTenantMap.set(connection, tenantId);
++                        logger_1.logger.debug(`[RLS_PATCH] Set app.current_tenant: ${tenantId} for connection`);
++                    } else {
++                        // Clear tenant context if not set (for admin/system operations)
++                        await connection.query("SELECT set_config('app.current_tenant', NULL, false)");
++                        connectionTenantMap.set(connection, null);
++                        logger_1.logger.debug('[RLS_PATCH] Cleared app.current_tenant for connection');
++                    }
++                } catch (error) {
++                    logger_1.logger.error(`[RLS_PATCH] Failed to set tenant context: ${String(error)}`);
++                }
++            }
++        }
++
++        // Hook into connection acquisition to set tenant context when connection is acquired
++        if (pgConnection.client && typeof pgConnection.client.acquireConnection === 'function') {
++            const originalAcquireConnection = pgConnection.client.acquireConnection.bind(pgConnection.client);
++
++            pgConnection.client.acquireConnection = async function () {
++                const connection = await originalAcquireConnection();
++
++                // Set tenant context from AsyncLocalStorage if available
++                const tenantId = getTenantIdFromContext();
++                await setTenantContextOnConnection(connection, tenantId);
++
++                return connection;
++            };
++
++            logger_1.logger.info('[RLS_PATCH] Hooked into client.acquireConnection');
++        }
++
++        // Wrap query execution to set tenant_id before each query
++        // This ensures tenant_id is always current, even if connection is reused from pool
++        if (pgConnection.client && typeof pgConnection.client.query === 'function') {
++            const originalQuery = pgConnection.client.query.bind(pgConnection.client);
++
++            pgConnection.client.query = async function (connection, obj, ...args) {
++                // Get current tenant_id from context
++                const tenantId = getTenantIdFromContext();
++
++                // Set tenant_id before query execution
++                await setTenantContextOnConnection(connection, tenantId);
++
++                // Execute original query
++                return originalQuery(connection, obj, ...args);
++            };
++
++            logger_1.logger.info('[RLS_PATCH] Hooked into client.query');
++        }
++
++        // NOTE: Transaction hook is not needed because transactions use client.query under the hood
++        // which is already hooked above. This avoids "Cannot assign to read only property" errors.
++
++        logger_1.logger.info('[RLS_PATCH] Row Level Security hooks initialized successfully');
++    } catch (error) {
++        logger_1.logger.error(`[RLS_PATCH] Failed to initialize RLS hooks: ${String(error)}`);
++        // Don't throw - allow application to continue without RLS if setup fails
++    }
++    // ============================================================================
++    // END NAZARE RLS PATCH
++    // ============================================================================
++
+     container_1.container.register(utils_1.ContainerRegistrationKeys.PG_CONNECTION, (0, awilix_1.asValue)(pgConnection));
+     return pgConnection;
+ }
