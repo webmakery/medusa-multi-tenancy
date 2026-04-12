@@ -26,13 +26,11 @@ function normalizeHeaderValue(value: string | string[] | undefined): string | un
 }
 
 function getClientIp(req: MedusaRequest): string {
-  const forwardedFor = normalizeHeaderValue(req.headers['x-forwarded-for']);
-
-  if (forwardedFor) {
-    return forwardedFor.split(',')[0].trim();
+  if (req.ip?.trim()) {
+    return req.ip.trim();
   }
 
-  return req.ip ?? 'unknown';
+  return req.socket?.remoteAddress ?? 'unknown';
 }
 
 function requestCorrelationIdMiddleware(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
