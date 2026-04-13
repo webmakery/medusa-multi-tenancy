@@ -22,7 +22,15 @@ This runbook validates policy requirements for encryption, secret management, an
 
 - `BACKUP_PITR_ENABLED=true` (or equivalent truthy value).
 - `BACKUP_RETENTION_DAYS >= 35`.
+- `BACKUP_FREQUENCY_HOURS <= 24` for full snapshot cadence.
+- `TENANT_DATA_RPO_MINUTES <= 15`.
+- `TENANT_DATA_RTO_SINGLE_TENANT_MINUTES <= 60`.
+- `TENANT_DATA_RTO_FULL_RESTORE_MINUTES <= 240`.
 - `BACKUP_RESTORE_DRILL_LAST_AT` should be present as restore-drill evidence.
+- `RESTORE_DRILL_SINGLE_TENANT_LAST_AT` should be present as single-tenant drill evidence.
+- `RESTORE_DRILL_FULL_LAST_AT` should be present as full-restore drill evidence.
+- `FAILOVER_RUNBOOK_VERSION` and `INCIDENT_RESPONSE_OWNER` should be present for launch accountability.
+- `RESTORE_TENANT_BOUNDARY_CHECK_LAST_AT` should be present as post-restore integrity evidence.
 
 ## Automated validation
 
@@ -45,5 +53,13 @@ Expected outcome:
 | Encryption keys configured | `KMS_KEY_ID`, `BACKUP_ENCRYPTION_KEY_ID` checks |
 | Secrets are centrally managed | `SECRET_PROVIDER` allowed-values check |
 | Secrets are strong/non-default | `JWT_SECRET`, `COOKIE_SECRET` checks |
-| Backups support retention + PITR | `BACKUP_RETENTION_DAYS`, `BACKUP_PITR_ENABLED` checks |
-| Restore process is exercised | `BACKUP_RESTORE_DRILL_LAST_AT` warning signal |
+| Backups support retention + PITR + frequency | `BACKUP_RETENTION_DAYS`, `BACKUP_PITR_ENABLED`, `BACKUP_FREQUENCY_HOURS` checks |
+| Recovery objectives are defined | `TENANT_DATA_RPO_MINUTES`, `TENANT_DATA_RTO_*` checks |
+| Restore process is exercised | `BACKUP_RESTORE_DRILL_LAST_AT`, `RESTORE_DRILL_*` warning signals |
+| Failover ownership is documented | `FAILOVER_RUNBOOK_VERSION`, `INCIDENT_RESPONSE_OWNER` warning signals |
+| Tenant boundaries validated after restore | `RESTORE_TENANT_BOUNDARY_CHECK_LAST_AT` warning signal |
+
+
+## Related runbook
+
+- `docs/ops/tenant-backup-restore-failover-runbook.md` defines backup cadence, RPO/RTO, restore drill procedures, failover ownership, and post-restore tenant-boundary checks.
