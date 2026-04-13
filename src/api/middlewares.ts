@@ -209,6 +209,31 @@ function getClientIp(req: MedusaRequest): string {
   return req.ip ?? 'unknown';
 }
 
+function getAuthenticatedActorEmail(req: MedusaRequest): string | null {
+  const authContext = (req as any).auth_context;
+
+  const possibleEmails = [
+    authContext?.actor_email,
+    authContext?.email,
+    authContext?.actor?.email,
+    authContext?.auth_identity?.app_metadata?.email,
+    authContext?.user_metadata?.email,
+  ];
+
+  for (const value of possibleEmails) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    if (normalized.includes('@')) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
 function requestCorrelationIdMiddleware(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
   const incomingCorrelationId = normalizeHeaderValue(req.headers[CORRELATION_ID_HEADER]);
   const correlationId = incomingCorrelationId?.trim() || randomUUID();
@@ -576,6 +601,7 @@ function structuredErrorLoggingMiddleware(req: MedusaRequest, res: MedusaRespons
     const traceParent = normalizeHeaderValue(req.headers.traceparent);
     const traceContext = parseTraceParent(traceParent);
     const actorHash = pseudonymize(getActorEmail(req));
+    const authenticatedActorHash = pseudonymize(getAuthenticatedActorEmail(req));
     const clientIpHash = pseudonymize(getClientIp(req));
     const authTenantId = getActiveTenantIdFromAuthContext(req);
     const pathname = (req.path || req.originalUrl || '').split('?')[0];
@@ -597,29 +623,29 @@ function structuredErrorLoggingMiddleware(req: MedusaRequest, res: MedusaRespons
       })
     );
 
-    if (authTenantId && authTenantId !== tenantId) {
-      const authMismatchKey = `${actorHash || 'unknown'}:${tenantId}:${authTenantId}:auth-mismatch`;
-      if (!potentialLeakageDeduplication.has(authMismatchKey)) {
-        potentialLeakageDeduplication.add(authMismatchKey);
-        console.error(
-          JSON.stringify({
-            level: 'error',
-            event: 'tenant_leakage_auth_mismatch',
-            tenant_id: tenantId,
-            auth_tenant_id: authTenantId,
-            endpoint_class: endpointClass,
-            correlation_id: correlationId,
-            actor_hash: actorHash,
-            ...traceContext,
-          })
-        );
+    if (authenticatedActorHash) {
+      if (authTenantId && authTenantId !== tenantId) {
+        const authMismatchKey = `${authenticatedActorHash}:${tenantId}:${authTenantId}:auth-mismatch`;
+        if (!potentialLeakageDeduplication.has(authMismatchKey)) {
+          potentialLeakageDeduplication.add(authMismatchKey);
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              event: 'tenant_leakage_auth_mismatch',
+              tenant_id: tenantId,
+              auth_tenant_id: authTenantId,
+              endpoint_class: endpointClass,
+              correlation_id: correlationId,
+              actor_hash: authenticatedActorHash,
+              ...traceContext,
+            })
+          );
+        }
       }
-    }
 
-    if (actorHash) {
-      const priorPattern = actorTenantPatternWindow.get(actorHash);
+      const priorPattern = actorTenantPatternWindow.get(authenticatedActorHash);
       if (priorPattern && priorPattern.tenantId !== tenantId && now - priorPattern.updatedAt <= LEAKAGE_PATTERN_WINDOW_MS) {
-        const crossTenantKey = `${actorHash}:${priorPattern.tenantId}:${tenantId}`;
+        const crossTenantKey = `${authenticatedActorHash}:${priorPattern.tenantId}:${tenantId}`;
         if (!potentialLeakageDeduplication.has(crossTenantKey)) {
           potentialLeakageDeduplication.add(crossTenantKey);
           console.warn(
@@ -630,13 +656,13 @@ function structuredErrorLoggingMiddleware(req: MedusaRequest, res: MedusaRespons
               previous_tenant_id: priorPattern.tenantId,
               endpoint_class: endpointClass,
               correlation_id: correlationId,
-              actor_hash: actorHash,
+              actor_hash: authenticatedActorHash,
               ...traceContext,
             })
           );
         }
       }
-      actorTenantPatternWindow.set(actorHash, { tenantId, updatedAt: now });
+      actorTenantPatternWindow.set(authenticatedActorHash, { tenantId, updatedAt: now });
     }
 
     if (res.statusCode < 400) {
