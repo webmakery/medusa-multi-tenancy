@@ -1,0 +1,153 @@
+version: 1
+scope:
+  objective: Tenant-aware FinOps for gross-margin visibility, anomaly response, and optimization governance.
+  applies_to:
+    - infrastructure
+    - platform-services
+    - external-api-vendors
+
+labels:
+  required_resource_tags:
+    - service_name
+    - workload
+    - environment
+    - region
+    - owner_team
+    - tenant_cost_attribution
+  workload_enum:
+    - api-online
+    - worker-async
+    - analytics-batch
+    - data-pipeline
+    - storage-hot
+    - storage-cold
+  tenant_cost_attribution_enum:
+    - direct
+    - shared-allocatable
+    - shared-unallocatable
+
+cost_mapping:
+  tenant_segments:
+    - smb
+    - mid_market
+    - enterprise
+  allocation_policy:
+    direct:
+      description: Cost event already has tenant_id (or tenant_id list with exact split).
+      method: direct_assign
+    shared_allocatable:
+      description: Shared service spend allocatable via usage drivers.
+      method: proportional_allocation
+      supported_drivers:
+        - request_count
+        - compute_seconds
+        - storage_gb_days
+        - event_volume
+    shared_unallocatable:
+      description: Shared spend with no stable technical driver.
+      method: segment_weighted_allocation
+      fallback_weights:
+        smb: 1
+        mid_market: 2
+        enterprise: 4
+  quality_targets:
+    tagged_coverage: ">= 98% of cloud spend has required_resource_tags"
+    tenant_mappable_coverage: ">= 90% of spend is direct or shared-allocatable"
+
+gross_margin:
+  dimensions:
+    - billing_plan
+    - tenant_segment
+    - month
+  formula: gross_margin = recognized_revenue - cogs
+  cogs_components:
+    - db_cost
+    - compute_cost
+    - storage_cost
+    - external_api_cost
+  reporting:
+    cadence: weekly_snapshot + monthly_close
+    required_views:
+      - gross_margin_by_plan
+      - gross_margin_by_plan_and_segment
+      - cogs_driver_share_by_plan
+      - top_10_cost_drivers_mom_change
+
+anomaly_detection:
+  alerts:
+    - id: spend-spike-day-over-day
+      scope: service_name + workload
+      condition: "daily_spend >= 1.5 * trailing_14d_daily_avg AND daily_spend_delta >= 500"
+      severity: high
+      route:
+        - finops-oncall
+        - owning-team
+      response_sla: 2h
+    - id: tenant-segment-spike
+      scope: tenant_segment
+      condition: "daily_segment_cost >= 1.4 * trailing_28d_same_weekday_avg"
+      severity: medium
+      route:
+        - finops-triage
+      response_sla: 8h
+    - id: unit-economics-regression
+      scope: billing_plan
+      condition: "gross_margin_pct_drop >= 5 points week_over_week"
+      severity: high
+      route:
+        - finops-oncall
+        - finance-partner
+        - product-owner
+      response_sla: 1d
+
+weekly_reporting:
+  report_name: finops-weekly-spend-and-margin
+  schedule: "Every Monday 09:00 UTC"
+  recipients:
+    - finops
+    - eng-leads
+    - finance-business-partner
+    - product-leadership
+  required_sections:
+    - spend_summary_total_and_by_workload
+    - spend_by_tenant_segment
+    - gross_margin_by_plan
+    - top_cost_driver_changes
+    - anomalies_opened_and_resolved
+    - optimization_backlog_progress
+
+optimization_backlog:
+  prioritization_model:
+    score_formula: "ROI_score = savings_annualized_usd * confidence / implementation_weeks"
+    confidence_scale:
+      - high: 1.0
+      - medium: 0.7
+      - low: 0.4
+    risk_bands:
+      - low
+      - medium
+      - high
+  ranking_policy:
+    - "Prioritize highest ROI_score items with low risk first."
+    - "Do not schedule high-risk items ahead of low-risk items unless expected annualized savings is >= 3x."
+  required_fields:
+    - initiative_name
+    - owner
+    - primary_cost_driver
+    - estimated_annual_savings_usd
+    - estimated_effort_weeks
+    - confidence
+    - risk
+    - blockers
+    - target_quarter
+    - status
+
+governance:
+  rituals:
+    - weekly_finops_review
+    - monthly_margin_deep_dive
+  weekly_finops_review_agenda:
+    - confirm tag and allocation coverage targets
+    - review anomalies and mitigations
+    - review gross margin trends by plan
+    - re-rank optimization backlog
