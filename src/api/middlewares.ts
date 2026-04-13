@@ -311,7 +311,8 @@ function classifyEndpoint(req: MedusaRequest): EndpointClass {
     pathname.includes('/login') ||
     pathname.includes('/signup') ||
     pathname.includes('/password') ||
-    pathname.includes('/token')
+    pathname.includes('/token') ||
+    pathname.includes('/verify-email')
   ) {
     return 'auth';
   }
