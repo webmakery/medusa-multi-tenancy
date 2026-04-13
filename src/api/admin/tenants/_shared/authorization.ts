@@ -11,7 +11,8 @@ type TenantAction =
   | 'deactivate_tenant'
   | 'suspend_tenant'
   | 'reactivate_tenant'
-  | 'request_deletion';
+  | 'request_deletion'
+  | 'manage_security';
 
 const ACTION_PERMISSIONS: Record<TenantAction, TenantRole[]> = {
   invite: ['owner', 'admin'],
@@ -20,6 +21,7 @@ const ACTION_PERMISSIONS: Record<TenantAction, TenantRole[]> = {
   suspend_tenant: ['owner'],
   reactivate_tenant: ['owner'],
   request_deletion: ['owner'],
+  manage_security: ['owner', 'admin'],
 };
 
 export async function authorizeTenantAction(
