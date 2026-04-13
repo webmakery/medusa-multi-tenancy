@@ -10,7 +10,7 @@ import AnalyticsTopProductDaily from './models/analytics-top-product-daily';
 
 interface RecordEventInput {
   tenant_id: string;
-  event_type: 'session_started' | 'checkout_started' | 'checkout_completed';
+  event_type: 'session_started' | 'checkout_started' | 'checkout_completed' | 'onboarding_milestone';
   event_timestamp?: string;
   session_id?: string;
   order_id?: string;
@@ -35,6 +35,7 @@ class AnalyticsModuleService extends MedusaService({
     session_started: ['channel', 'campaign', 'actor_hash'],
     checkout_started: ['channel', 'campaign', 'actor_hash'],
     checkout_completed: ['channel', 'campaign', 'actor_hash'],
+    onboarding_milestone: ['channel', 'campaign', 'actor_hash'],
   };
 
   private static readonly PII_KEY_PATTERN = /(email|phone|name|address|ip|ssn|card|dob)/i;

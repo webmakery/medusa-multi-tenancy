@@ -66,7 +66,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         tenant_name: body.name.trim(),
         tenant_slug: slug,
         owner_email: ownerEmail,
-        password_secret: body.password.trim(),
+        password_secret: null,
         first_name: body.first_name?.trim() || null,
         last_name: body.last_name?.trim() || null,
         verification_token_hash: verificationTokenHash,
@@ -77,7 +77,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       .merge({
         tenant_name: body.name.trim(),
         tenant_slug: slug,
-        password_secret: body.password.trim(),
+        password_secret: null,
         first_name: body.first_name?.trim() || null,
         last_name: body.last_name?.trim() || null,
         verification_token_hash: verificationTokenHash,
@@ -88,7 +88,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     await analyticsService.recordEvent({
       tenant_id: sessionId,
-      event_type: 'session_started',
+      event_type: 'onboarding_milestone',
       metadata: {
         channel: 'tenant_signup',
         campaign: 'signup_submitted',

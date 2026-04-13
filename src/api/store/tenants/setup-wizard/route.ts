@@ -15,9 +15,21 @@ interface SetupWizardBody {
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const body = (req.body || {}) as SetupWizardBody;
+  const authContext = (req as any).auth_context;
+  const authenticatedTenantId =
+    authContext?.app_metadata?.active_tenant_id || authContext?.user_metadata?.active_tenant_id;
+  const requestedTenantId = body.tenant_id?.trim();
 
-  if (!body.tenant_id?.trim()) {
+  if (!requestedTenantId) {
     return res.status(400).json({ message: 'tenant_id is required' });
+  }
+
+  if (!authenticatedTenantId) {
+    return res.status(401).json({ message: 'Authentication is required for setup wizard updates.' });
+  }
+
+  if (authenticatedTenantId !== requestedTenantId) {
+    return res.status(403).json({ message: 'You are not authorized to update setup for this tenant.' });
   }
 
   if (!body.project_name?.trim() || !body.site_name?.trim()) {
@@ -27,14 +39,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const knex = req.scope.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
   const analyticsService = req.scope.resolve<AnalyticsModuleService>(ANALYTICS_MODULE);
 
-  const session = await knex('tenant_signup_session').where({ tenant_id: body.tenant_id.trim() }).first();
+  const session = await knex('tenant_signup_session').where({ tenant_id: authenticatedTenantId }).first();
 
   if (!session) {
     return res.status(404).json({ message: 'Onboarding session not found for this tenant.' });
   }
 
   await knex('tenant')
-    .where({ tenant_id: body.tenant_id.trim() })
+    .where({ tenant_id: authenticatedTenantId })
     .update({
       settings_json: knex.raw(
         `jsonb_set(
@@ -66,8 +78,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   });
 
   await analyticsService.recordEvent({
-    tenant_id: body.tenant_id.trim(),
-    event_type: 'checkout_completed',
+    tenant_id: authenticatedTenantId,
+    event_type: 'onboarding_milestone',
     metadata: {
       channel: 'tenant_onboarding',
       campaign: 'setup_wizard_completed',

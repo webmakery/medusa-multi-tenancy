@@ -13,6 +13,7 @@ import createTenantOnboardingWorkflow from '../../../../workflows/tenant/create-
 
 interface VerifyEmailBody {
   token?: string;
+  password?: string;
 }
 
 function getAuthCookieDomain(req: MedusaRequest): string | undefined {
@@ -38,6 +39,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(400).json({ message: 'token is required' });
   }
 
+  if (!body.password?.trim() || body.password.trim().length < 8) {
+    return res.status(400).json({ message: 'password must be at least 8 characters' });
+  }
+
   const tokenHash = createHash('sha256').update(body.token.trim()).digest('hex');
   const knex = req.scope.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
   const analyticsService = req.scope.resolve<AnalyticsModuleService>(ANALYTICS_MODULE);
@@ -54,10 +59,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   if (new Date(session.verification_expires_at).getTime() < Date.now()) {
     return res.status(410).json({ message: 'Verification token has expired.' });
-  }
-
-  if (!session.password_secret) {
-    return res.status(409).json({ message: 'Signup session is missing credentials. Please restart signup.' });
   }
 
   try {
@@ -79,7 +80,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       query: req.query as Record<string, string>,
       body: {
         email: session.owner_email,
-        password: session.password_secret,
+        password: body.password.trim(),
       },
       protocol: req.protocol,
     });
@@ -146,13 +147,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       tenant_created_at: knex.fn.now(),
       owner_assigned_at: knex.fn.now(),
       current_step: 'owner_assigned',
-      password_secret: null,
       updated_at: knex.fn.now(),
     });
 
     await analyticsService.recordEvent({
       tenant_id: result.tenant.tenant_id,
-      event_type: 'checkout_started',
+      event_type: 'onboarding_milestone',
       metadata: {
         channel: 'tenant_onboarding',
         campaign: 'email_verified',
@@ -160,7 +160,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     });
     await analyticsService.recordEvent({
       tenant_id: result.tenant.tenant_id,
-      event_type: 'checkout_started',
+      event_type: 'onboarding_milestone',
       metadata: {
         channel: 'tenant_onboarding',
         campaign: 'tenant_created',
@@ -168,7 +168,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     });
     await analyticsService.recordEvent({
       tenant_id: result.tenant.tenant_id,
-      event_type: 'checkout_started',
+      event_type: 'onboarding_milestone',
       metadata: {
         channel: 'tenant_onboarding',
         campaign: 'owner_assigned',
