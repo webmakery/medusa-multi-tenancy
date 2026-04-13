@@ -39,6 +39,19 @@ const en = {
       errors: {
         load: 'Could not load team members.',
       },
+      tenantSwitcher: {
+        title: 'Tenant context',
+        description: 'If you belong to multiple tenants, explicitly switch to the tenant you want to manage.',
+        current: 'Current active tenant: {{tenantId}}',
+        none: 'No active tenant selected in this session.',
+        selectLabel: 'Switch tenant',
+        action: 'Switch tenant',
+        success: 'Tenant context updated.',
+        errors: {
+          load: 'Could not load tenant memberships.',
+          switch: 'Could not switch tenant context.',
+        },
+      },
     },
     salesChannels: {
       menuLabel: 'Sales channels',

@@ -425,4 +425,55 @@ describe('Tenant Management API integration', () => {
       expect(tenantBSettings.data.settings.store_name).toBe(`Switch Store B ${seed}`)
     })
   })
+
+  describe('ownership guardrails', () => {
+    it('prevents removing the last owner and supports ownership transfer', async () => {
+      const seed = Date.now() + 8
+      const tenant = await createTenant(`Ownership Guards ${seed}`, `owner-og-${seed}@example.com`)
+      const adminEmail = `admin-og-${seed}@example.com`
+
+      const adminInvite = await inviteUser(tenant.tenant_id, tenant.ownerEmail, adminEmail)
+      await axios.post(
+        `${API_URL}/admin/tenants/invitations/accept`,
+        { invitation_token: adminInvite.data.invitation.invitation_token },
+        { headers: authHeaders }
+      )
+
+      const members = await axios.get(`${API_URL}/admin/tenants/${tenant.tenant_id}/members`, {
+        headers: authHeaders,
+      })
+      const ownerMember = members.data.members.find((member: any) => member.user_email === tenant.ownerEmail)
+      const adminMember = members.data.members.find((member: any) => member.user_email === adminEmail)
+      expect(ownerMember).toBeDefined()
+      expect(adminMember).toBeDefined()
+
+      await expect(
+        axios.delete(`${API_URL}/admin/tenants/${tenant.tenant_id}/members/${ownerMember.id}`, {
+          headers: {
+            ...authHeaders,
+            'x-user-email': tenant.ownerEmail,
+          },
+        })
+      ).rejects.toMatchObject({
+        response: {
+          status: 400,
+          data: { message: 'Cannot remove the last owner. Transfer ownership first.' },
+        },
+      })
+
+      const transfer = await axios.post(
+        `${API_URL}/admin/tenants/${tenant.tenant_id}/ownership/transfer`,
+        { target_member_id: adminMember.id },
+        {
+          headers: {
+            ...authHeaders,
+            'x-user-email': tenant.ownerEmail,
+          },
+        }
+      )
+
+      expect(transfer.status).toBe(200)
+      expect(transfer.data.transfer.new_owner).toBe(adminEmail)
+    })
+  })
 })

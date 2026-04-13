@@ -3,7 +3,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { TENANT_MANAGEMENT_MODULE } from '../../../../modules/tenant-management';
 import TenantManagementModuleService, { TenantRole } from '../../../../modules/tenant-management/service';
 import { isTenantAccessBlocked } from '../../../../modules/tenant-management/lifecycle';
-import { getActorEmail } from '../../_shared/auth-context';
+import { getActiveTenantIdFromAuthContext, getActorEmail } from '../../_shared/auth-context';
 
 type TenantAction =
   | 'invite'
@@ -42,6 +42,15 @@ export async function authorizeTenantAction(
   }
 
   const tenantManagementService: TenantManagementModuleService = req.scope.resolve(TENANT_MANAGEMENT_MODULE);
+  const activeMemberships = await tenantManagementService.listActiveMembershipsByEmail(actorEmail);
+  const activeTenantIdFromSession = getActiveTenantIdFromAuthContext(req);
+
+  if (activeMemberships.length > 1 && activeTenantIdFromSession && activeTenantIdFromSession !== tenant_id) {
+    res.status(409).json({
+      message: 'Tenant mismatch. Switch your active tenant first to prevent cross-tenant account confusion.',
+    });
+    return { allowed: false };
+  }
 
   const membership = await tenantManagementService.getTenantMembershipByEmail({
     tenant_id,
