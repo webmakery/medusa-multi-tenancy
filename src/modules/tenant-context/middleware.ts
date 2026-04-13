@@ -41,6 +41,7 @@ const TENANT_OPTIONAL_ROUTE_PATTERNS: RegExp[] = [
 const TENANT_LIFECYCLE_OVERRIDE_ROUTE_PATTERNS: RegExp[] = [
   /^\/admin\/tenants\/[^/]+\/reactivate\/?$/i,
 ];
+const RESERVED_SYSTEM_TENANT_ID = 'system';
 
 function normalizeHeaderValue(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) {
@@ -184,6 +185,9 @@ async function resolveTenantId(req: MedusaRequest): Promise<string | null> {
 
   if (headerValue?.trim()) {
     const normalized = headerValue.trim();
+    if (normalized.toLowerCase() === RESERVED_SYSTEM_TENANT_ID) {
+      return null;
+    }
 
     if (UUID_REGEX.test(normalized)) {
       return normalized;
@@ -204,6 +208,9 @@ async function resolveTenantId(req: MedusaRequest): Promise<string | null> {
 
   for (const slug of slugCandidates) {
     if (!slug) {
+      continue;
+    }
+    if (slug === RESERVED_SYSTEM_TENANT_ID) {
       continue;
     }
 
