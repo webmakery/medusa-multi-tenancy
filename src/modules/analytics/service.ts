@@ -42,7 +42,7 @@ class AnalyticsModuleService extends MedusaService({
   private static readonly ROLLUP_RETENTION_DAYS = 400;
 
   private getKnex(): Knex {
-    return (this as any).__container__.resolve(ContainerRegistrationKeys.PG_CONNECTION) as Knex;
+    return (this as any).__container__[ContainerRegistrationKeys.PG_CONNECTION] as Knex;
   }
 
   private sanitizeMetadata(
