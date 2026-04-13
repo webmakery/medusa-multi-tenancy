@@ -42,6 +42,7 @@ class TenantManagementModuleService extends MedusaService({
   async listTenants() {
     const knex = this.getKnex();
 
+    // tenant-scope-ignore: tenant directory endpoint is intentionally cross-tenant for authorized admins.
     return knex('tenant')
       .select('id', 'tenant_id', 'name', 'slug', 'owner_email', 'status', 'created_at')
       .orderBy('created_at', 'desc');
@@ -59,6 +60,7 @@ class TenantManagementModuleService extends MedusaService({
   async createTenant(input: { name: string; slug: string; owner_email: string }) {
     const knex = this.getKnex();
 
+    // tenant-scope-ignore: uniqueness check happens before a tenant_id exists for the new tenant.
     const existingTenant = await knex('tenant').where({ slug: input.slug }).first();
 
     if (existingTenant) {
@@ -132,6 +134,7 @@ class TenantManagementModuleService extends MedusaService({
   async acceptInvitation(input: { invitation_token: string }) {
     const knex = this.getKnex();
 
+    // tenant-scope-ignore: invitation token lookup is global by design and then constrained by invitation.tenant_id.
     const invitation = await knex('tenant_invitation')
       .where({ invitation_token: input.invitation_token })
       .first();
@@ -248,6 +251,7 @@ class TenantManagementModuleService extends MedusaService({
   async deactivateTenant(tenantId: string, actor?: string) {
     const knex = this.getKnex();
 
+    // tenant-scope-ignore: admin action targets tenant by primary id to lock the whole tenant account.
     const tenant = await knex('tenant').where({ id: tenantId }).first();
 
     if (!tenant) {

@@ -127,7 +127,7 @@ class ThemeModuleService extends MedusaService({
 
     if (existingStatus) {
       await knex('theme_publish_status')
-        .where({ id: existingStatus.id })
+        .where({ id: existingStatus.id, tenant_id: input.tenant_id })
         .update({
           status: input.publish ? 'published' : 'unpublished',
           published_at: input.publish ? nowValue : existingStatus.published_at,

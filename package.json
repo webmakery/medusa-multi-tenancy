@@ -24,7 +24,8 @@
     "test:unit": "TEST_TYPE=unit NODE_OPTIONS=--experimental-vm-modules jest --silent --runInBand --forceExit",
     "test:rls-patch": "NODE_OPTIONS=--experimental-vm-modules jest integration-tests/http/tenant-context/rls-patch.spec.ts --forceExit",
     "test:rls-customers": "NODE_OPTIONS=--experimental-vm-modules jest integration-tests/http/tenant-context/rls-customers-api.spec.ts --forceExit",
-    "test:rls-products": "NODE_OPTIONS=--experimental-vm-modules jest integration-tests/http/tenant-context/rls-products-api.spec.ts --forceExit"
+    "test:rls-products": "NODE_OPTIONS=--experimental-vm-modules jest integration-tests/http/tenant-context/rls-products-api.spec.ts --forceExit",
+    "lint:tenant-scope": "node ./scripts/check-tenant-scope.js"
   },
   "dependencies": {
     "@medusajs/admin-sdk": "2.13.6",
