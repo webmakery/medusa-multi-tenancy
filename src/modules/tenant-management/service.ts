@@ -656,32 +656,46 @@ class TenantManagementModuleService extends MedusaService({
       throw new Error('max_session_duration_minutes must be between 15 and 43200.');
     }
 
-    const normalizedIpAllowlist = Array.from(
-      new Set((input.config.session_policy?.ip_allowlist || []).map((entry) => String(entry).trim()).filter(Boolean))
-    );
-
-    const normalizedIdentityProviders = (input.config.identity_providers || []).map((provider) => ({
-      protocol: provider.protocol,
-      provider_name: provider.provider_name.trim(),
-      sign_in_url: provider.sign_in_url?.trim() || null,
-      issuer: provider.issuer?.trim() || null,
-      metadata_url: provider.metadata_url?.trim() || null,
-      client_id: provider.client_id?.trim() || null,
-      domain_hint: provider.domain_hint?.trim() || null,
-      x509_certificate: provider.x509_certificate?.trim() || null,
-      scim_enabled: provider.scim_enabled ?? false,
-      scim_base_url: provider.scim_base_url?.trim() || null,
-      scim_auth_mode: provider.scim_auth_mode || null,
-    }));
-
     const existingSettings = (tenant.settings_json && typeof tenant.settings_json === 'object' ? tenant.settings_json : {}) as Record<string, any>;
+    const existingAccessControl = (existingSettings.access_control && typeof existingSettings.access_control === 'object'
+      ? existingSettings.access_control
+      : {}) as Record<string, any>;
+    const existingSessionPolicy = (existingAccessControl.session_policy && typeof existingAccessControl.session_policy === 'object'
+      ? existingAccessControl.session_policy
+      : {}) as Record<string, any>;
+
+    const normalizedIpAllowlist = input.config.session_policy?.ip_allowlist !== undefined
+      ? Array.from(
+        new Set(input.config.session_policy.ip_allowlist.map((entry) => String(entry).trim()).filter(Boolean))
+      )
+      : Array.isArray(existingSessionPolicy.ip_allowlist)
+        ? existingSessionPolicy.ip_allowlist
+        : [];
+
+    const normalizedIdentityProviders = input.config.identity_providers !== undefined
+      ? input.config.identity_providers.map((provider) => ({
+        protocol: provider.protocol,
+        provider_name: provider.provider_name.trim(),
+        sign_in_url: provider.sign_in_url?.trim() || null,
+        issuer: provider.issuer?.trim() || null,
+        metadata_url: provider.metadata_url?.trim() || null,
+        client_id: provider.client_id?.trim() || null,
+        domain_hint: provider.domain_hint?.trim() || null,
+        x509_certificate: provider.x509_certificate?.trim() || null,
+        scim_enabled: provider.scim_enabled ?? false,
+        scim_base_url: provider.scim_base_url?.trim() || null,
+        scim_auth_mode: provider.scim_auth_mode || null,
+      }))
+      : Array.isArray(existingAccessControl.identity_providers)
+        ? existingAccessControl.identity_providers
+        : [];
 
     const accessControl = {
-      sso_required_for_admins: input.config.sso_required_for_admins ?? false,
+      sso_required_for_admins: input.config.sso_required_for_admins ?? (existingAccessControl.sso_required_for_admins ?? false),
       identity_providers: normalizedIdentityProviders,
       session_policy: {
-        max_session_duration_minutes: sessionDuration ?? 480,
-        mfa_enforced: input.config.session_policy?.mfa_enforced ?? false,
+        max_session_duration_minutes: sessionDuration ?? (existingSessionPolicy.max_session_duration_minutes ?? 480),
+        mfa_enforced: input.config.session_policy?.mfa_enforced ?? (existingSessionPolicy.mfa_enforced ?? false),
         ip_allowlist: normalizedIpAllowlist,
       },
       updated_at: new Date().toISOString(),
