@@ -221,3 +221,10 @@ For every full run, publish a report containing:
 - [ ] Headroom targets evaluated and recorded.
 - [ ] Major-release re-test decision recorded.
 - [ ] Report published with action items and owners.
+
+## 10) Published baseline artifact
+
+Use the latest published baseline for release planning and on-call scaling decisions:
+
+- `docs/ops/tenant-capacity-published-baseline.md`
+- `docs/ops/reports/tenant-capacity-baseline-2026-04-13.json`

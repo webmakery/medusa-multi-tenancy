@@ -1,0 +1,153 @@
+{
+  "generated_at": "2026-04-13T09:28:08.023Z",
+  "expected_active_tenants": 420,
+  "peak_concurrent_users": 2400,
+  "request_mix_percent": {
+    "auth": 5,
+    "read": 45,
+    "write": 20,
+    "reporting": 10,
+    "webhooks": 10,
+    "backgroundJobs": 10
+  },
+  "stages": [
+    {
+      "name": "warm-up",
+      "percent": 0.5,
+      "minutes": 15,
+      "targetRps": 600,
+      "metrics": {
+        "cpuPct": 47,
+        "dbPoolPct": 55,
+        "dbWaitP95Ms": 8,
+        "queueLagP95Sec": 20,
+        "apiP95Ms": 180,
+        "errorRatePct": 0.15
+      },
+      "bottlenecks": [],
+      "saturated": false
+    },
+    {
+      "name": "steady-state",
+      "percent": 1,
+      "minutes": 45,
+      "targetRps": 1200,
+      "metrics": {
+        "cpuPct": 66,
+        "dbPoolPct": 76,
+        "dbWaitP95Ms": 22,
+        "queueLagP95Sec": 38,
+        "apiP95Ms": 285,
+        "errorRatePct": 0.15
+      },
+      "bottlenecks": [],
+      "saturated": false
+    },
+    {
+      "name": "ramp-110",
+      "percent": 1.1,
+      "minutes": 10,
+      "targetRps": 1320,
+      "metrics": {
+        "cpuPct": 72.8,
+        "dbPoolPct": 86.2,
+        "dbWaitP95Ms": 37,
+        "queueLagP95Sec": 74,
+        "apiP95Ms": 327,
+        "errorRatePct": 0.15
+      },
+      "bottlenecks": [
+        "database connection pressure"
+      ],
+      "saturated": true
+    },
+    {
+      "name": "ramp-120",
+      "percent": 1.2,
+      "minutes": 10,
+      "targetRps": 1440,
+      "metrics": {
+        "cpuPct": 79.6,
+        "dbPoolPct": 96.4,
+        "dbWaitP95Ms": 51,
+        "queueLagP95Sec": 110,
+        "apiP95Ms": 369,
+        "errorRatePct": 0.31
+      },
+      "bottlenecks": [
+        "database connection pressure",
+        "compute pressure"
+      ],
+      "saturated": true
+    },
+    {
+      "name": "ramp-130",
+      "percent": 1.3,
+      "minutes": 10,
+      "targetRps": 1560,
+      "metrics": {
+        "cpuPct": 86.4,
+        "dbPoolPct": 98,
+        "dbWaitP95Ms": 66,
+        "queueLagP95Sec": 146,
+        "apiP95Ms": 411,
+        "errorRatePct": 0.47
+      },
+      "bottlenecks": [
+        "database connection pressure",
+        "queue lag pressure",
+        "compute pressure"
+      ],
+      "saturated": true
+    },
+    {
+      "name": "ramp-140",
+      "percent": 1.4,
+      "minutes": 10,
+      "targetRps": 1680,
+      "metrics": {
+        "cpuPct": 93.2,
+        "dbPoolPct": 98,
+        "dbWaitP95Ms": 80,
+        "queueLagP95Sec": 182,
+        "apiP95Ms": 453,
+        "errorRatePct": 0.63
+      },
+      "bottlenecks": [
+        "database connection pressure",
+        "queue lag pressure",
+        "compute pressure",
+        "api latency pressure"
+      ],
+      "saturated": true
+    },
+    {
+      "name": "recovery",
+      "percent": 0.7,
+      "minutes": 20,
+      "targetRps": 840,
+      "metrics": {
+        "cpuPct": 54.6,
+        "dbPoolPct": 63.4,
+        "dbWaitP95Ms": 8,
+        "queueLagP95Sec": 20,
+        "apiP95Ms": 180,
+        "errorRatePct": 0.15
+      },
+      "bottlenecks": [],
+      "saturated": false
+    }
+  ],
+  "first_saturation_stage": "ramp-110",
+  "first_saturation_bottlenecks": [
+    "database connection pressure"
+  ],
+  "max_sustainable_rps": 1200,
+  "published_capacity_rps": 900,
+  "safety_margin_pct": 25,
+  "scaling_triggers": {
+    "api_scale_out": "cpu>=60% + api_p95>=320ms for 5m OR in_flight>=75%",
+    "worker_scale_out": "queue_lag_p95>=60s for 5m OR queue_depth>=1.5x baseline",
+    "db_action": "db_pool>=75% for 5m or db_wait_p95>=35ms"
+  }
+}
