@@ -422,9 +422,12 @@ export async function installApp(input: InstallAppInput) {
   });
 }
 
-export async function uninstallApp(appId: string) {
+export async function uninstallApp(appId: string, confirmationTenantId: string) {
   return apiRequest<{ message?: string; app_id: string }>(`/apps/${appId}`, {
     method: 'DELETE',
+    headers: {
+      'x-confirm-tenant-id': confirmationTenantId,
+    },
   });
 }
 
@@ -502,9 +505,12 @@ export async function getBillingOverview() {
   return apiRequest<BillingOverviewResponse>('/billing/status');
 }
 
-export async function updateBillingState(action: 'renew' | 'payment_failed' | 'payment_recovered' | 'expire_grace') {
+export async function updateBillingState(
+  action: 'renew' | 'payment_failed' | 'payment_recovered' | 'expire_grace',
+  confirmationTenantId: string
+) {
   return apiRequest<BillingOverviewResponse>('/billing/status', {
     method: 'POST',
-    body: JSON.stringify({ action }),
+    body: JSON.stringify({ action, confirm_tenant_id: confirmationTenantId }),
   });
 }

@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { getStoreSettings, StoreSettings, updateStoreSettings } from '../../lib/api/admin';
+import TenantContextSwitcher from '../../components/tenant-context-switcher';
 
 const defaultState: StoreSettings = {
   store_name: '',
@@ -56,6 +57,7 @@ const StoreSettingsPage = () => {
         <Text size="small" className="text-ui-fg-subtle mt-2">
           {t('admin.storeSettings.description')}
         </Text>
+        <TenantContextSwitcher />
       </Container>
 
       <Container className="p-6 max-w-2xl">

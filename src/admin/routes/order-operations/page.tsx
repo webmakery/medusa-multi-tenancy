@@ -11,6 +11,7 @@ import {
   runReturnLifecycle,
   updateAdminTracking,
 } from '../../lib/api/admin';
+import TenantContextSwitcher from '../../components/tenant-context-switcher';
 
 const OrderOperationsPage = () => {
   const { t } = useTranslation();
@@ -131,6 +132,7 @@ const OrderOperationsPage = () => {
         <Text size="small" className="text-ui-fg-subtle mt-2">
           {t('admin.orderOps.description')}
         </Text>
+        <TenantContextSwitcher />
 
         <div className="mt-4 flex items-end gap-3 max-w-xl">
           <div className="flex-1 flex flex-col gap-y-2">

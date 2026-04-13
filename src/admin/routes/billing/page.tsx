@@ -3,7 +3,8 @@ import { Badge, Button, Container, Heading, Table, Text } from '@medusajs/ui';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { BillingEntitlement, BillingUsage, getBillingOverview, updateBillingState } from '../../lib/api/admin';
+import { BillingEntitlement, BillingUsage, getActiveTenantContext, getBillingOverview, updateBillingState } from '../../lib/api/admin';
+import TenantContextSwitcher from '../../components/tenant-context-switcher';
 
 const BillingPage = () => {
   const { t } = useTranslation();
@@ -46,10 +47,26 @@ const BillingPage = () => {
 
   const onTransition = async (action: 'renew' | 'payment_failed' | 'payment_recovered' | 'expire_grace') => {
     setError('');
-    setIsMutating(true);
 
     try {
-      await updateBillingState(action);
+      const tenantContext = await getActiveTenantContext();
+      const confirmationTenantId = tenantContext.active_tenant_id || tenantContext.memberships?.[0]?.tenant_id || '';
+
+      if (!confirmationTenantId) {
+        setError(t('admin.tenantContext.errors.noneSelected'));
+        return;
+      }
+
+      const shouldProceed = window.confirm(
+        t('admin.billing.actions.confirm', { action: t(`admin.billing.actions.${action}`), tenantId: confirmationTenantId })
+      );
+
+      if (!shouldProceed) {
+        return;
+      }
+
+      setIsMutating(true);
+      await updateBillingState(action, confirmationTenantId);
       await load();
     } catch (err: any) {
       setError(err.message || t('admin.billing.errors.update'));
@@ -68,6 +85,7 @@ const BillingPage = () => {
       <Container className="p-6">
         <Heading level="h1">{t('admin.billing.title')}</Heading>
         <Text size="small" className="text-ui-fg-subtle mt-2">{t('admin.billing.description')}</Text>
+        <TenantContextSwitcher />
       </Container>
 
       <Container className="p-6">

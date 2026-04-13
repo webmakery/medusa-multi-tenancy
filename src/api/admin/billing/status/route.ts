@@ -3,6 +3,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { BILLING_MODULE } from '../../../../modules/billing';
 import BillingModuleService from '../../../../modules/billing/service';
 import { requireTenantRole, resolveAuthenticatedTenantAccess } from '../../_shared/tenant-access';
+import { requireTenantConfirmation } from '../../_shared/tenant-confirmation';
 
 type BillingAction = 'renew' | 'payment_failed' | 'payment_recovered' | 'expire_grace';
 
@@ -40,6 +41,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   const action = ((req.body || {}) as { action?: BillingAction }).action;
+
+  if (!requireTenantConfirmation(req, res, { tenantId: tenantAccess.tenantId!, operationLabel: 'update billing state' })) {
+    return;
+  }
 
   if (!action || !['renew', 'payment_failed', 'payment_recovered', 'expire_grace'].includes(action)) {
     return res.status(400).json({

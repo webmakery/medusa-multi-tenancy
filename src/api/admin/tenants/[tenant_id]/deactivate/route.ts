@@ -3,6 +3,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { TENANT_MANAGEMENT_MODULE } from '../../../../../modules/tenant-management';
 import TenantManagementModuleService from '../../../../../modules/tenant-management/service';
 import { authorizeTenantAction } from '../../_shared/authorization';
+import { requireTenantConfirmation } from '../../../_shared/tenant-confirmation';
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const tenantManagementService: TenantManagementModuleService = req.scope.resolve(TENANT_MANAGEMENT_MODULE);
@@ -12,6 +13,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const authorization = await authorizeTenantAction(req, res, 'deactivate_tenant');
 
   if (!authorization.allowed) {
+    return;
+  }
+
+  if (!requireTenantConfirmation(req, res, { tenantId: tenant_id, operationLabel: 'deactivate this tenant' })) {
     return;
   }
 

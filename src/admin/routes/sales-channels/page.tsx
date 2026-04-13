@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { getSalesChannels, SalesChannel } from '../../lib/api/admin';
+import TenantContextSwitcher from '../../components/tenant-context-switcher';
 
 const SalesChannelsPage = () => {
   const { t } = useTranslation();
@@ -25,6 +26,7 @@ const SalesChannelsPage = () => {
         <Text size="small" className="text-ui-fg-subtle mt-2">
           {t('admin.salesChannels.description')}
         </Text>
+        <TenantContextSwitcher />
       </Container>
 
       <Container className="p-0 overflow-hidden">

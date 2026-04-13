@@ -3,6 +3,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { TENANT_MANAGEMENT_MODULE } from '../../../../../../../modules/tenant-management';
 import TenantManagementModuleService from '../../../../../../../modules/tenant-management/service';
 import { authorizeTenantAction } from '../../../../_shared/authorization';
+import { requireTenantConfirmation } from '../../../../../_shared/tenant-confirmation';
 
 interface UpdateRoleBody {
   role?: 'owner' | 'admin' | 'member' | 'viewer' | 'staff';
@@ -22,6 +23,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   if (!body.role) {
     return res.status(400).json({ message: 'role is required' });
+  }
+
+  if (!requireTenantConfirmation(req, res, { tenantId: tenant_id, operationLabel: 'change member roles' })) {
+    return;
   }
 
   try {
