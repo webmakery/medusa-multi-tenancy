@@ -4,6 +4,8 @@ import { getTenantIdFromRequest } from '../../utils/tenant';
 import { requireIdempotencyKey } from '../../utils/idempotency';
 import { APPS_MODULE } from '../../../modules/apps';
 import AppsModuleService from '../../../modules/apps/service';
+import { BILLING_MODULE } from '../../../modules/billing';
+import BillingModuleService from '../../../modules/billing/service';
 
 interface InstallAppBody {
   app_name?: string;
@@ -46,8 +48,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   const appsModuleService: AppsModuleService = req.scope.resolve(APPS_MODULE);
+  const billingService: BillingModuleService = req.scope.resolve(BILLING_MODULE);
 
   try {
+    await billingService.assertEntitlement({
+      tenant_id: tenantId,
+      feature_key: 'apps.installations',
+      quantity: 1,
+    });
+
     const installed = await appsModuleService.installApp({
       tenant_id: tenantId,
       app_name: body.app_name.trim(),
@@ -64,6 +73,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   } catch (error: any) {
     if (error.message?.includes('already installed')) {
       return res.status(409).json({ message: error.message });
+    }
+    if (error.message?.includes('Plan limit reached') || error.message?.includes('Billing account is suspended')) {
+      return res.status(402).json({ message: error.message });
     }
 
     throw error;

@@ -80,6 +80,32 @@ export interface AnalyticsTopProduct {
   gmv_cents: number;
 }
 
+export interface BillingAccount {
+  tenant_id: string;
+  plan_code: string;
+  status: 'trialing' | 'active' | 'past_due' | 'grace_period' | 'suspended';
+  trial_starts_at?: string | null;
+  trial_ends_at?: string | null;
+  current_period_start: string;
+  current_period_end: string;
+  grace_ends_at?: string | null;
+  failed_payment_count: number;
+}
+
+export interface BillingEntitlement {
+  feature_key: string;
+  is_enabled: boolean;
+  limit_value?: number | null;
+  meter_key?: string | null;
+}
+
+export interface BillingUsage {
+  meter_key: string;
+  used_quantity: number;
+  period_start: string;
+  period_end: string;
+}
+
 export class AdminApiError extends Error {
   status: number;
 
@@ -423,4 +449,24 @@ export async function getAnalyticsTopProducts(input: AnalyticsRangeInput & { lim
   const path = query ? `/analytics/top-products?${query}` : '/analytics/top-products';
 
   return apiRequest<AnalyticsTopProductsResponse>(path);
+}
+
+interface BillingOverviewResponse {
+  billing: {
+    account: BillingAccount;
+    entitlements: BillingEntitlement[];
+    usage: BillingUsage[];
+    state_transitions: Record<string, string>;
+  } | null;
+}
+
+export async function getBillingOverview() {
+  return apiRequest<BillingOverviewResponse>('/billing/status');
+}
+
+export async function updateBillingState(action: 'renew' | 'payment_failed' | 'payment_recovered' | 'expire_grace') {
+  return apiRequest<BillingOverviewResponse>('/billing/status', {
+    method: 'POST',
+    body: JSON.stringify({ action }),
+  });
 }

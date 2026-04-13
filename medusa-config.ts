@@ -5,6 +5,7 @@ import { THEME_MODULE } from './src/modules/theme'
 import { APPS_MODULE } from './src/modules/apps'
 import { ANALYTICS_MODULE } from './src/modules/analytics'
 import { AUDIT_LOG_MODULE } from './src/modules/audit-log'
+import { BILLING_MODULE } from './src/modules/billing'
 
 loadEnv(process.env.NODE_ENV || 'development', process.cwd())
 
@@ -42,6 +43,9 @@ module.exports = defineConfig({
     },
     [AUDIT_LOG_MODULE]: {
       resolve: './modules/audit-log',
+    },
+    [BILLING_MODULE]: {
+      resolve: './modules/billing',
     },
   },
 })

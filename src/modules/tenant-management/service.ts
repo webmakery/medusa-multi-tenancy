@@ -6,6 +6,8 @@ import { ContainerRegistrationKeys, MedusaService } from '@medusajs/framework/ut
 
 import { AUDIT_LOG_MODULE } from '../audit-log';
 import AuditLogModuleService from '../audit-log/service';
+import { BILLING_MODULE } from '../billing';
+import BillingModuleService from '../billing/service';
 import TenantInvitation from './models/tenant-invitation';
 import TenantMembership from './models/tenant-membership';
 import { TENANT_DELETION_RETENTION_DAYS, TenantStatus } from './lifecycle';
@@ -38,6 +40,10 @@ class TenantManagementModuleService extends MedusaService({
 
   private getAuditLogService(): AuditLogModuleService {
     return (this as any).__container__.resolve(AUDIT_LOG_MODULE) as AuditLogModuleService;
+  }
+
+  private getBillingService(): BillingModuleService {
+    return (this as any).__container__.resolve(BILLING_MODULE) as BillingModuleService;
   }
 
   async listTenants() {
@@ -117,6 +123,8 @@ class TenantManagementModuleService extends MedusaService({
       role: 'owner',
       status: 'active',
     });
+
+    await this.getBillingService().ensureTenantBilling(tenantId);
 
     return tenant;
   }
