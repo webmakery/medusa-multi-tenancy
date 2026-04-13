@@ -41,10 +41,9 @@ function parseTimestamp(value: string): number | null {
   return Math.trunc(parsed * 1000);
 }
 
-async function auditWebhookFailure(req: MedusaRequest, appId: string, reason: string) {
+async function auditWebhookFailure(req: MedusaRequest, appId: string, reason: string, tenantId = 'system') {
   try {
     const auditLogService: AuditLogModuleService = req.scope.resolve(AUDIT_LOG_MODULE);
-    const tenantId = normalizeHeaderValue(req.headers['x-tenant-id'])?.trim() || 'system';
     const nonce = normalizeHeaderValue(req.headers['x-app-nonce'])?.trim() || null;
     const timestamp = normalizeHeaderValue(req.headers['x-app-timestamp'])?.trim() || null;
     const signature = normalizeHeaderValue(req.headers['x-app-signature'])?.trim() || null;
@@ -125,9 +124,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   const appsService: AppsModuleService = req.scope.resolve(APPS_MODULE);
-  const isValid = await appsService.verifyInboundWebhook(appId, rawBody, signature);
+  const webhookContext = await appsService.verifyInboundWebhook(appId, rawBody, signature);
 
-  if (!isValid) {
+  if (!webhookContext) {
     await auditWebhookFailure(req, appId, 'invalid_signature');
     return res.status(401).json({ message: 'Invalid webhook signature.' });
   }
@@ -137,6 +136,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   res.status(202).json({
     message: 'Webhook accepted.',
     app_id: appId,
+    tenant_id: webhookContext.tenant_id,
     payload: req.body || {},
   });
 }

@@ -23,9 +23,13 @@ interface InstallAppInput {
 }
 
 interface PublishEventInput {
-  tenant_id?: string;
+  tenant_id: string;
   event_name: string;
   data: Record<string, unknown>;
+}
+
+interface VerifiedInboundWebhookContext {
+  tenant_id: string;
 }
 
 class AppsModuleService extends MedusaService({
@@ -222,7 +226,7 @@ class AppsModuleService extends MedusaService({
     };
   }
 
-  async verifyInboundWebhook(appId: string, rawBody: string, signature: string) {
+  async verifyInboundWebhook(appId: string, rawBody: string, signature: string): Promise<VerifiedInboundWebhookContext | null> {
     const knex = this.getKnex();
 
     // tenant-scope-ignore: inbound route authenticates by app_id signature, tenant_id not available at this stage.
@@ -235,12 +239,12 @@ class AppsModuleService extends MedusaService({
         'app_installation.status': 'installed',
         'tenant.status': 'active',
       })
-      .select('app_credential.*')
+      .select('app_credential.*', 'app_installation.tenant_id')
       .orderBy('app_credential.created_at', 'desc')
       .first();
 
     if (!credential) {
-      return false;
+      return null;
     }
 
     const provided = signature.startsWith('sha256=') ? signature.slice(7) : signature;
@@ -250,16 +254,23 @@ class AppsModuleService extends MedusaService({
     const providedBuffer = Buffer.from(provided, 'hex');
 
     if (expectedBuffer.length !== providedBuffer.length) {
-      return false;
+      return null;
     }
 
-    return timingSafeEqual(expectedBuffer, providedBuffer);
+    const isValid = timingSafeEqual(expectedBuffer, providedBuffer);
+
+    if (!isValid) {
+      return null;
+    }
+
+    return {
+      tenant_id: credential.tenant_id,
+    };
   }
 
   async publishEventToSubscribers(input: PublishEventInput) {
     const knex = this.getKnex();
 
-    // tenant-scope-ignore: query is optionally scoped when tenant_id is supplied, otherwise fan-out is intentional.
     const baseQuery = knex('app_webhook')
       .join('app_installation', 'app_installation.id', 'app_webhook.app_id')
       .join('app_credential', 'app_credential.app_id', 'app_installation.id')
@@ -279,11 +290,17 @@ class AppsModuleService extends MedusaService({
         'app_credential.key_id'
       );
 
-    if (input.tenant_id) {
-      baseQuery.andWhere('app_installation.tenant_id', input.tenant_id);
-    }
+    baseQuery.andWhere('app_installation.tenant_id', input.tenant_id);
 
     const subscriptions = await baseQuery;
+
+    const subscriptionsByTenant = new Map<string, typeof subscriptions>();
+
+    for (const subscription of subscriptions) {
+      const existing = subscriptionsByTenant.get(subscription.tenant_id) || [];
+      existing.push(subscription);
+      subscriptionsByTenant.set(subscription.tenant_id, existing);
+    }
 
     const payload = JSON.stringify({
       event: input.event_name,
@@ -292,51 +309,77 @@ class AppsModuleService extends MedusaService({
     });
 
     await Promise.allSettled(
-      subscriptions.map(async (subscription) => {
-        const signature = this.signPayload(payload, subscription.secret);
+      [...subscriptionsByTenant.values()].map(async (tenantSubscriptions) => {
+        await Promise.allSettled(
+          tenantSubscriptions.map(async (subscription) => {
+            const signature = this.signPayload(payload, subscription.secret);
+            let deliverySucceeded = false;
+            let lastResponseStatus: number | null = null;
+            let lastErrorMessage: string | null = null;
 
-        for (let attempt = 1; attempt <= MAX_WEBHOOK_DELIVERY_ATTEMPTS; attempt += 1) {
-          let deliveryStatus = 'failed';
-          let responseStatus: number | null = null;
-          let errorMessage: string | null = null;
+            for (let attempt = 1; attempt <= MAX_WEBHOOK_DELIVERY_ATTEMPTS; attempt += 1) {
+              let deliveryStatus = 'failed';
+              let responseStatus: number | null = null;
+              let errorMessage: string | null = null;
 
-          try {
-            const response = await fetch(subscription.target_url, {
-              method: 'POST',
-              headers: {
-                'content-type': 'application/json',
-                'x-app-id': subscription.app_id,
-                'x-app-key': subscription.key_id,
-                'x-app-signature': `sha256=${signature}`,
-                'x-tenant-id': subscription.tenant_id,
-              },
-              body: payload,
-            });
+              try {
+                const response = await fetch(subscription.target_url, {
+                  method: 'POST',
+                  headers: {
+                    'content-type': 'application/json',
+                    'x-app-id': subscription.app_id,
+                    'x-app-key': subscription.key_id,
+                    'x-app-signature': `sha256=${signature}`,
+                    'x-tenant-id': subscription.tenant_id,
+                  },
+                  body: payload,
+                });
 
-            responseStatus = response.status;
-            deliveryStatus = response.ok ? 'delivered' : 'failed';
-            errorMessage = response.ok ? null : `Received non-success response: ${response.status}`;
-          } catch (error: any) {
-            errorMessage = error?.message || 'Webhook delivery failed.';
-          }
+                responseStatus = response.status;
+                deliveryStatus = response.ok ? 'delivered' : 'failed';
+                errorMessage = response.ok ? null : `Received non-success response: ${response.status}`;
+              } catch (error: any) {
+                errorMessage = error?.message || 'Webhook delivery failed.';
+              }
 
-          await knex('app_webhook_delivery_log').insert({
-            id: randomUUID(),
-            tenant_id: subscription.tenant_id,
-            app_id: subscription.app_id,
-            event_name: input.event_name,
-            target_url: subscription.target_url,
-            delivery_status: deliveryStatus,
-            attempt_number: attempt,
-            response_status: responseStatus,
-            error_message: errorMessage,
-            delivered_at: knex.fn.now(),
-          });
+              lastResponseStatus = responseStatus;
+              lastErrorMessage = errorMessage;
 
-          if (deliveryStatus === 'delivered') {
-            break;
-          }
-        }
+              await knex('app_webhook_delivery_log').insert({
+                id: randomUUID(),
+                tenant_id: subscription.tenant_id,
+                app_id: subscription.app_id,
+                event_name: input.event_name,
+                target_url: subscription.target_url,
+                delivery_status: deliveryStatus,
+                attempt_number: attempt,
+                response_status: responseStatus,
+                error_message: errorMessage,
+                delivered_at: knex.fn.now(),
+              });
+
+              if (deliveryStatus === 'delivered') {
+                deliverySucceeded = true;
+                break;
+              }
+            }
+
+            if (!deliverySucceeded) {
+              await knex('app_webhook_delivery_log').insert({
+                id: randomUUID(),
+                tenant_id: subscription.tenant_id,
+                app_id: subscription.app_id,
+                event_name: input.event_name,
+                target_url: subscription.target_url,
+                delivery_status: 'dead_letter',
+                attempt_number: MAX_WEBHOOK_DELIVERY_ATTEMPTS + 1,
+                response_status: lastResponseStatus,
+                error_message: lastErrorMessage || 'Moved to tenant-partitioned dead-letter after retry exhaustion.',
+                delivered_at: knex.fn.now(),
+              });
+            }
+          })
+        );
       })
     );
 

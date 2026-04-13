@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 
+import { getTenantIdFromRequest } from '../../../utils/tenant';
 import batchAssignProductsToCollectionWorkflow from '../../../../workflows/batch-assign-products-to-collection';
 
 interface AdminBatchAssignCollectionBody {
@@ -9,6 +10,12 @@ interface AdminBatchAssignCollectionBody {
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  const tenantId = getTenantIdFromRequest(req);
+
+  if (!tenantId) {
+    return res.status(400).json({ message: 'x-tenant-id header (or tenant_id query in development) is required' });
+  }
+
   const body = (req.body || {}) as AdminBatchAssignCollectionBody;
   const collectionId = body.collection_id?.trim();
 

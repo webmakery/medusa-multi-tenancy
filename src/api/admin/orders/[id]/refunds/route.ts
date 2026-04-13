@@ -3,7 +3,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import handleOrderRefundWorkflow, {
   HandleOrderRefundWorkflowInput,
 } from '../../../../../workflows/orders/handle-refund';
-import { requireIdempotencyKey } from '../../../../utils/idempotency';
+import { buildTenantScopedIdempotencyKey, requireIdempotencyKey } from '../../../../utils/idempotency';
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const idempotencyKey = requireIdempotencyKey(req, res);
@@ -26,7 +26,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       created_by: (req as any).auth_context?.actor_id,
     },
     context: {
-      idempotencyKey: `admin-order-refund:${req.params.id}:${idempotencyKey}`,
+      idempotencyKey: buildTenantScopedIdempotencyKey(req, `admin-order-refund:${req.params.id}`, idempotencyKey),
     },
   });
 

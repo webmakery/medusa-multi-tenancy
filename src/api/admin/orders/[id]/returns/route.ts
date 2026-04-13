@@ -2,7 +2,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 
 import manageOrderReturnWorkflow, { ReturnLifecycleAction } from '../../../../../workflows/orders/manage-return';
-import { requireIdempotencyKey } from '../../../../utils/idempotency';
+import { buildTenantScopedIdempotencyKey, requireIdempotencyKey } from '../../../../utils/idempotency';
 
 interface ReturnsLifecycleBody {
   action?: ReturnLifecycleAction;
@@ -54,7 +54,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       payload,
     },
     context: {
-      idempotencyKey: `admin-order-return:${req.params.id}:${body.action}:${idempotencyKey}`,
+      idempotencyKey: buildTenantScopedIdempotencyKey(req, `admin-order-return:${req.params.id}:${body.action}`, idempotencyKey),
     },
   });
 
