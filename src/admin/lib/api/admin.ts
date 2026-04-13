@@ -21,6 +21,29 @@ export interface ActiveTenantMembership {
   status: string;
 }
 
+export interface TenantAccessSession {
+  email: string;
+  role: 'platform_admin' | 'tenant_admin';
+  is_platform_admin: boolean;
+  assigned_tenant_id?: string | null;
+  active_tenant_id?: string | null;
+  effective_tenant_id?: string | null;
+  is_auto_provisioned?: boolean;
+}
+
+export interface TenantAccessRecord {
+  id: string;
+  user_id?: string | null;
+  user_email: string;
+  tenant_id?: string | null;
+  role: 'platform_admin' | 'tenant_admin';
+  is_platform_admin: boolean;
+  active_tenant_id?: string | null;
+  is_auto_provisioned?: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SalesChannel {
   id: string;
   name: string;
@@ -249,6 +272,28 @@ export async function switchActiveTenant(tenantId: string) {
     method: 'POST',
     body: JSON.stringify({ tenant_id: tenantId }),
   });
+}
+
+export async function getMyTenantAccess() {
+  return apiRequest<TenantAccessSession>('/tenant-access/me');
+}
+
+export async function activatePlatformTenant(tenantId: string | null) {
+  return apiRequest<TenantAccessSession>('/tenant-access/activate', {
+    method: 'POST',
+    body: JSON.stringify({ tenant_id: tenantId }),
+  });
+}
+
+export async function assignTenantAccess(input: { user_email: string; tenant_id: string }) {
+  return apiRequest<{ assignment: TenantAccessRecord }>('/tenant-access/assign', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function listTenantAccess() {
+  return apiRequest<{ count: number; entries: TenantAccessRecord[] }>('/tenant-access/list');
 }
 
 interface SalesChannelsResponse {

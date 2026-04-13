@@ -68,6 +68,45 @@ const en = {
         noneSelected: 'Select an active tenant before continuing.',
       },
     },
+    tenantAccess: {
+      menuLabel: 'Tenant access',
+      title: 'Tenant access',
+      description: 'Review tenant access state derived from the authenticated admin account.',
+      sections: {
+        platform: 'Platform admin controls',
+        assign: 'Manual assignment',
+      },
+      fields: {
+        email: 'Email',
+        role: 'Role',
+        assignedTenant: 'Assigned tenant',
+        activeTenant: 'Active tenant',
+        effectiveTenant: 'Effective tenant',
+        autoProvisioned: 'Auto-provisioned',
+        assignEmail: 'User email',
+        assignTenant: 'Tenant ID',
+      },
+      values: {
+        yes: 'Yes',
+        no: 'No',
+        adminMode: 'Admin mode (no active tenant)',
+      },
+      actions: {
+        activate: 'Activate tenant',
+        clear: 'Clear selection',
+        assign: 'Assign user',
+      },
+      messages: {
+        activated: 'Tenant activation updated.',
+        assigned: 'Tenant assignment updated.',
+      },
+      errors: {
+        load: 'Could not load tenant access.',
+        activate: 'Could not update active tenant.',
+        assign: 'Could not assign user to tenant.',
+        assignInput: 'User email and tenant ID are required.',
+      },
+    },
 
     salesChannels: {
       menuLabel: 'Sales channels',
