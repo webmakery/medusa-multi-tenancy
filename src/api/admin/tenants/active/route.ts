@@ -47,7 +47,7 @@ async function listActorMemberships(req: MedusaRequest, actorEmail: string) {
     .orderBy('created_at', 'asc');
 }
 
-function issueUpdatedSessionCookie(req: MedusaRequest, res: MedusaResponse, tenantId: string) {
+function issueUpdatedSessionCookie(req: MedusaRequest, res: MedusaResponse, tenantId: string, tenantRole?: string) {
   const authContext = (req as any).auth_context || {};
   const configModule = req.scope.resolve(ContainerRegistrationKeys.CONFIG_MODULE) as any;
   const jwtSecret = configModule.projectConfig.http.jwtSecret;
@@ -60,10 +60,12 @@ function issueUpdatedSessionCookie(req: MedusaRequest, res: MedusaResponse, tena
       app_metadata: {
         ...(authContext.app_metadata || {}),
         active_tenant_id: tenantId,
+        ...(tenantRole ? { tenant_role: tenantRole } : {}),
       },
       user_metadata: {
         ...(authContext.user_metadata || {}),
         active_tenant_id: tenantId,
+        ...(tenantRole ? { tenant_role: tenantRole } : {}),
       },
     },
     {
@@ -121,7 +123,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(403).json({ message: 'You are not an active member of this tenant.' });
   }
 
-  issueUpdatedSessionCookie(req, res, tenantId);
+  issueUpdatedSessionCookie(req, res, tenantId, membership.role);
 
   return res.status(200).json({
     active_tenant_id: tenantId,

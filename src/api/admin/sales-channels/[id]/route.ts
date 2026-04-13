@@ -3,7 +3,7 @@ import type { Knex } from 'knex';
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 
-import { resolveAuthenticatedTenantAccess } from '../../_shared/tenant-access';
+import { requireTenantRole, resolveAuthenticatedTenantAccess } from '../../_shared/tenant-access';
 
 interface SalesChannelRecord {
   id: string;
@@ -42,6 +42,11 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
 
   if (tenantAccess.error) {
     return res.status(tenantAccess.error.status).json({ message: tenantAccess.error.message });
+  }
+
+  const roleCheck = requireTenantRole(tenantAccess, ['owner', 'admin']);
+  if (!roleCheck.ok) {
+    return res.status(roleCheck.status).json({ message: roleCheck.message });
   }
 
   const channelId = req.params.id;
@@ -96,6 +101,11 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
 
   if (tenantAccess.error) {
     return res.status(tenantAccess.error.status).json({ message: tenantAccess.error.message });
+  }
+
+  const roleCheck = requireTenantRole(tenantAccess, ['owner', 'admin']);
+  if (!roleCheck.ok) {
+    return res.status(roleCheck.status).json({ message: roleCheck.message });
   }
 
   const channelId = req.params.id;

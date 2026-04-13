@@ -6,7 +6,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 
 import { requireIdempotencyKey } from '../../utils/idempotency';
-import { resolveAuthenticatedTenantAccess } from '../_shared/tenant-access';
+import { requireTenantRole, resolveAuthenticatedTenantAccess } from '../_shared/tenant-access';
 
 interface SalesChannelRecord {
   id: string;
@@ -37,6 +37,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     return res.status(tenantAccess.error.status).json({ message: tenantAccess.error.message });
   }
 
+  const roleCheck = requireTenantRole(tenantAccess, ['owner', 'admin', 'member', 'viewer']);
+  if (!roleCheck.ok) {
+    return res.status(roleCheck.status).json({ message: roleCheck.message });
+  }
+
   const knex = req.scope.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
 
   const channels = (await knex('sales_channel')
@@ -61,6 +66,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
   if (tenantAccess.error) {
     return res.status(tenantAccess.error.status).json({ message: tenantAccess.error.message });
+  }
+
+  const roleCheck = requireTenantRole(tenantAccess, ['owner', 'admin']);
+  if (!roleCheck.ok) {
+    return res.status(roleCheck.status).json({ message: roleCheck.message });
   }
 
   const body = (req.body || {}) as CreateSalesChannelBody;

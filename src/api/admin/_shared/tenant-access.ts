@@ -2,12 +2,13 @@ import { MedusaRequest } from '@medusajs/framework/http';
 
 import { getTenantIdFromRequest } from '../../utils/tenant';
 import { TENANT_MANAGEMENT_MODULE } from '../../../modules/tenant-management';
-import TenantManagementModuleService from '../../../modules/tenant-management/service';
-import { getActorEmail } from './auth-context';
+import TenantManagementModuleService, { TenantRole } from '../../../modules/tenant-management/service';
+import { getActorEmail, getTenantRoleFromAuthContext } from './auth-context';
 
 export async function resolveAuthenticatedTenantAccess(req: MedusaRequest): Promise<{
   tenantId?: string;
   actorEmail?: string;
+  actorRole?: TenantRole;
   error?: { status: number; message: string };
 }> {
   const tenantId = getTenantIdFromRequest(req);
@@ -38,8 +39,30 @@ export async function resolveAuthenticatedTenantAccess(req: MedusaRequest): Prom
     };
   }
 
+  const actorRole = (membership.role || getTenantRoleFromAuthContext(req)) as TenantRole;
+
   return {
     tenantId,
     actorEmail,
+    actorRole,
+  };
+}
+
+export function hasTenantRole(access: { actorRole?: TenantRole }, allowedRoles: TenantRole[]): boolean {
+  return Boolean(access.actorRole && allowedRoles.includes(access.actorRole));
+}
+
+export function requireTenantRole(
+  access: { actorRole?: TenantRole },
+  allowedRoles: TenantRole[]
+): { ok: true } | { ok: false; status: number; message: string } {
+  if (hasTenantRole(access, allowedRoles)) {
+    return { ok: true };
+  }
+
+  return {
+    ok: false,
+    status: 403,
+    message: `Insufficient permissions. Required role: ${allowedRoles.join(' or ')}.`,
   };
 }

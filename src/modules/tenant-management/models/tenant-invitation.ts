@@ -4,7 +4,7 @@ const TenantInvitation = model.define('tenant_invitation', {
   id: model.id().primaryKey(),
   tenant_id: model.text(),
   email: model.text(),
-  role: model.enum(['owner', 'admin', 'staff']).default('staff'),
+  role: model.enum(['owner', 'admin', 'member', 'viewer']).default('member'),
   invitation_token: model.text(),
   status: model.enum(['pending', 'accepted', 'revoked']).default('pending'),
   invited_by: model.text().nullable(),

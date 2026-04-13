@@ -5,7 +5,7 @@ import TenantManagementModuleService from '../../../../../../../modules/tenant-m
 import { authorizeTenantAction } from '../../../../_shared/authorization';
 
 interface UpdateRoleBody {
-  role?: 'owner' | 'admin' | 'staff';
+  role?: 'owner' | 'admin' | 'member' | 'viewer' | 'staff';
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {

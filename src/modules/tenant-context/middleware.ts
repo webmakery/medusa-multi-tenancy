@@ -5,17 +5,36 @@ import type { Knex } from 'knex';
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from '@medusajs/framework';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { getActiveTenantIdFromAuthContext, getActorEmail } from '../../api/admin/_shared/auth-context';
+import { TenantRole } from '../tenant-management/service';
 
 /**
  * Type for tenant context stored in AsyncLocalStorage
  */
 export interface TenantContext {
   tenantId: string;
+  actorEmail?: string;
+  actorTenantRole?: TenantRole;
 }
 
 export const tenantContextStorage = new AsyncLocalStorage<TenantContext>();
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PLATFORM_OPERATOR_AUTH_METADATA_KEYS = [
+  'platform_operator',
+  'is_platform_operator',
+  'is_admin',
+  'admin',
+] as const;
+const TENANT_OPTIONAL_ROUTE_PATTERNS: RegExp[] = [
+  /^\/health\/?$/i,
+  /^\/store\/tenants\/signup\/?$/i,
+  /^\/store\/apps\/webhooks\//i,
+  /^\/admin\/tenants\/?$/i,
+  /^\/admin\/tenants\/active\/?$/i,
+  /^\/admin\/tenants\/invitations\/accept\/?$/i,
+  /^\/admin\/auth\//i,
+  /^\/auth\//i,
+];
 
 function normalizeHeaderValue(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) {
@@ -45,6 +64,58 @@ function normalizeSlug(value: unknown): string | null {
   }
 
   return normalized;
+}
+
+function getPathname(req: MedusaRequest): string {
+  return (req.path || req.originalUrl || '').split('?')[0] || '/';
+}
+
+function isAdminPath(req: MedusaRequest): boolean {
+  return getPathname(req).startsWith('/admin');
+}
+
+function isStorePath(req: MedusaRequest): boolean {
+  return getPathname(req).startsWith('/store');
+}
+
+function isTenantOptionalRoute(req: MedusaRequest): boolean {
+  const pathname = getPathname(req);
+  return TENANT_OPTIONAL_ROUTE_PATTERNS.some((pattern) => pattern.test(pathname));
+}
+
+function hasBasicApiKeyAuth(req: MedusaRequest): boolean {
+  const authorization = normalizeHeaderValue(req.headers.authorization)?.trim();
+  return Boolean(authorization && authorization.toLowerCase().startsWith('basic '));
+}
+
+function isTruthy(value: unknown): boolean {
+  if (value === true) {
+    return true;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 'yes';
+  }
+
+  return false;
+}
+
+function isPlatformOperator(req: MedusaRequest): boolean {
+  if (hasBasicApiKeyAuth(req)) {
+    return true;
+  }
+
+  const authContext = (req as any).auth_context;
+
+  for (const key of PLATFORM_OPERATOR_AUTH_METADATA_KEYS) {
+    if (isTruthy(authContext?.app_metadata?.[key]) || isTruthy(authContext?.auth_identity?.app_metadata?.[key])) {
+      return true;
+    }
+  }
+
+  const operatorHeader = normalizeHeaderValue(req.headers['x-platform-operator']);
+  return isTruthy(operatorHeader);
 }
 
 function getSubdomainFromRequest(req: MedusaRequest): string | null {
@@ -93,6 +164,11 @@ async function resolveTenantIdFromSlug(req: MedusaRequest, slug: string): Promis
 }
 
 async function resolveTenantId(req: MedusaRequest): Promise<string | null> {
+  const tenantIdParam = (req.params as Record<string, string | undefined>)?.tenant_id;
+  if (tenantIdParam?.trim() && UUID_REGEX.test(tenantIdParam.trim())) {
+    return tenantIdParam.trim();
+  }
+
   const headerValue = normalizeHeaderValue(req.headers['x-tenant-id']);
 
   if (headerValue?.trim()) {
@@ -138,8 +214,21 @@ async function resolveTenantId(req: MedusaRequest): Promise<string | null> {
   return null;
 }
 
-function isAdminPath(req: MedusaRequest): boolean {
-  return req.originalUrl.startsWith('/admin');
+async function getMembershipForTenant(req: MedusaRequest, tenantId: string, actorEmail: string) {
+  const knex = req.scope?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) as Knex | undefined;
+
+  if (!knex) {
+    return null;
+  }
+
+  return knex('tenant_membership')
+    .select('tenant_id', 'user_email', 'role', 'status')
+    .where({
+      tenant_id: tenantId,
+      user_email: actorEmail,
+      status: 'active',
+    })
+    .first();
 }
 
 async function enforceAdminTenantSelection(req: MedusaRequest): Promise<string | null> {
@@ -160,7 +249,7 @@ async function enforceAdminTenantSelection(req: MedusaRequest): Promise<string |
   }
 
   const memberships = await knex('tenant_membership')
-    .select('tenant_id', 'status')
+    .select('tenant_id', 'role', 'status')
     .where({ user_email: actorEmail, status: 'active' });
 
   if (!memberships.length) {
@@ -175,9 +264,9 @@ async function enforceAdminTenantSelection(req: MedusaRequest): Promise<string |
     throw Object.assign(new Error('active_tenant_id is required for users belonging to multiple tenants.'), { status: 400 });
   }
 
-  const isAllowedTenant = memberships.some((membership) => membership.tenant_id === selectedTenantId);
+  const selectedMembership = memberships.find((membership) => membership.tenant_id === selectedTenantId);
 
-  if (!isAllowedTenant) {
+  if (!selectedMembership) {
     throw Object.assign(new Error('You are not an active member of the selected tenant.'), { status: 403 });
   }
 
@@ -188,28 +277,81 @@ async function enforceAdminTenantSelection(req: MedusaRequest): Promise<string |
     authContext.app_metadata = {
       ...(authContext.app_metadata || {}),
       active_tenant_id: selectedTenantId,
+      tenant_role: selectedMembership.role,
+    };
+    authContext.user_metadata = {
+      ...(authContext.user_metadata || {}),
+      active_tenant_id: selectedTenantId,
+      tenant_role: selectedMembership.role,
     };
   }
 
   return selectedTenantId;
 }
 
+async function enforceTenantScope(req: MedusaRequest, tenantId: string | null): Promise<void> {
+  if ((!isAdminPath(req) && !isStorePath(req)) || isTenantOptionalRoute(req)) {
+    return;
+  }
+
+  if (!tenantId) {
+    if (isAdminPath(req) && isPlatformOperator(req)) {
+      return;
+    }
+
+    throw Object.assign(
+      new Error('Tenant scope is required for this endpoint. Provide x-tenant-id or select an active tenant.'),
+      { status: 400 }
+    );
+  }
+}
+
 export async function tenantContextMiddleware(req: MedusaRequest, _res: MedusaResponse, next: MedusaNextFunction) {
   try {
     await enforceAdminTenantSelection(req);
+    const tenantId = await resolveTenantId(req);
+    await enforceTenantScope(req, tenantId);
+
+    const actorEmail = getActorEmail(req) || undefined;
+    let actorTenantRole: TenantRole | undefined;
+
+    if (tenantId && actorEmail) {
+      const membership = await getMembershipForTenant(req, tenantId, actorEmail);
+
+      if (membership?.role) {
+        actorTenantRole = membership.role;
+      }
+    }
+
+    if (tenantId) {
+      req.headers['x-tenant-id'] = tenantId;
+      (req as any).tenant_context = {
+        tenant_id: tenantId,
+        actor_email: actorEmail,
+        actor_tenant_role: actorTenantRole,
+      };
+
+      const authContext = (req as any).auth_context;
+      if (authContext) {
+        authContext.app_metadata = {
+          ...(authContext.app_metadata || {}),
+          active_tenant_id: tenantId,
+          ...(actorTenantRole ? { tenant_role: actorTenantRole } : {}),
+        };
+        authContext.user_metadata = {
+          ...(authContext.user_metadata || {}),
+          active_tenant_id: tenantId,
+          ...(actorTenantRole ? { tenant_role: actorTenantRole } : {}),
+        };
+      }
+
+      return tenantContextStorage.run({ tenantId, actorEmail, actorTenantRole }, () => {
+        next();
+      });
+    }
+
+    next();
   } catch (error: any) {
     return _res.status(error.status || 400).json({ message: error.message || 'Invalid tenant context.' });
   }
-
-  const tenantId = await resolveTenantId(req);
-
-  if (tenantId) {
-    req.headers['x-tenant-id'] = tenantId;
-
-    return tenantContextStorage.run({ tenantId }, () => {
-      next();
-    });
-  }
-
-  next();
 }
