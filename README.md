@@ -146,6 +146,13 @@ curl http://localhost:9000/admin/tenants
 
 This creates/uses a `tenant` table and returns an onboarding checklist for next setup actions.
 
+## Integration Governance and Partner Enablement
+
+- API versioning + deprecation policy: `docs/platform/api-versioning-policy.md`
+- Integration framework contract: `docs/platform/integration-framework.md`
+- Tenant integration config isolation: `docs/platform/tenant-integration-config-isolation.md`
+- Developer partner guide + references: `docs/developer/partner-integrations.md`
+
 ## Quick Start
 
 ```bash
