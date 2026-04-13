@@ -267,6 +267,13 @@ const en = {
         description: 'Create your tenant account to begin setup.',
         action: 'Create account',
       },
+      success: {
+        register: 'Account created. Check your email for verification steps.',
+      },
+      errors: {
+        login: 'Could not sign in. Please check your credentials and try again.',
+        register: 'Could not create your account. Please try again.',
+      },
     },
     billing: {
       menuLabel: 'Billing',
