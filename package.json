@@ -32,7 +32,8 @@
     "analytics:validate-pipeline": "node ./scripts/validate-analytics-pipeline.js",
     "release:quality-gate": "node ./scripts/release-quality-gate.js",
     "release:orchestrate": "node ./scripts/release-orchestrator.js",
-    "dora:metrics": "node ./scripts/dora-metrics.js"
+    "dora:metrics": "node ./scripts/dora-metrics.js",
+    "compliance:readiness": "node ./scripts/compliance-readiness.js"
   },
   "dependencies": {
     "@medusajs/admin-sdk": "2.13.6",

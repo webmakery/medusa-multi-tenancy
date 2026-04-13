@@ -1,0 +1,114 @@
+{
+  "generated_at": "2026-04-13",
+  "control_catalog": [
+    {
+      "id": "AC-01",
+      "name": "Production access reviews",
+      "owner": "Security",
+      "recurring": true,
+      "cadence_days": 30,
+      "last_evidence_at": "2026-04-05",
+      "framework_mappings": {
+        "soc2": ["CC6.1", "CC6.2"],
+        "iso27001": ["A.5.15", "A.8.2"],
+        "gdpr": ["Art. 32(1)(b)"],
+        "ccpa": ["1798.150(a)(1)"],
+        "applies_to_privacy": true
+      },
+      "evidence": {
+        "source": "IAM access review export",
+        "collection_method": "automation",
+        "artifact_path": "artifacts/compliance/access-reviews"
+      }
+    },
+    {
+      "id": "BC-01",
+      "name": "Backup restore drill",
+      "owner": "Platform",
+      "recurring": true,
+      "cadence_days": 90,
+      "last_evidence_at": "2026-03-10",
+      "framework_mappings": {
+        "soc2": ["CC7.3", "A1.2"],
+        "iso27001": ["A.8.13", "A.5.30"],
+        "gdpr": ["Art. 32(1)(c)"],
+        "ccpa": ["1798.150(a)(1)"],
+        "applies_to_privacy": true
+      },
+      "evidence": {
+        "source": "Restore validation runbook output",
+        "collection_method": "automation",
+        "artifact_path": "artifacts/compliance/restore-drills"
+      }
+    },
+    {
+      "id": "VM-01",
+      "name": "Vulnerability management scan + remediation",
+      "owner": "Security",
+      "recurring": true,
+      "cadence_days": 14,
+      "last_evidence_at": "2026-04-08",
+      "framework_mappings": {
+        "soc2": ["CC7.1", "CC7.2"],
+        "iso27001": ["A.8.8", "A.8.9"],
+        "gdpr": [],
+        "ccpa": [],
+        "applies_to_privacy": false
+      },
+      "evidence": {
+        "source": "Scanner reports + ticket export",
+        "collection_method": "automation",
+        "artifact_path": "artifacts/compliance/vulnerability-scans"
+      }
+    }
+  ],
+  "dpa_and_subprocessors": {
+    "dpa_url": "https://example.com/legal/data-processing-addendum",
+    "subprocessor_url": "https://example.com/legal/subprocessors",
+    "last_reviewed_at": "2026-04-09",
+    "customer_data_handling_commitments": [
+      "Purpose limitation and documented processing instructions",
+      "Encryption in transit and at rest for customer personal data",
+      "72-hour breach notification commitment",
+      "Subprocessor notification and objection mechanism"
+    ]
+  },
+  "milestones": [
+    {
+      "name": "Q2 internal control test cycle kickoff",
+      "type": "internal_control_testing",
+      "scheduled_for": "2026-04-20",
+      "owner": "Security GRC"
+    },
+    {
+      "name": "Q2 design effectiveness walkthrough complete",
+      "type": "internal_control_testing",
+      "scheduled_for": "2026-05-06",
+      "owner": "Control Owners"
+    },
+    {
+      "name": "Q2 operating effectiveness evidence lock",
+      "type": "internal_control_testing",
+      "scheduled_for": "2026-06-15",
+      "owner": "Security GRC"
+    },
+    {
+      "name": "External auditor PBC request readiness review",
+      "type": "external_audit_readiness",
+      "scheduled_for": "2026-06-24",
+      "owner": "Security GRC + Finance"
+    },
+    {
+      "name": "SOC 2 / ISO 27001 pre-audit package sign-off",
+      "type": "external_audit_readiness",
+      "scheduled_for": "2026-07-08",
+      "owner": "Security Leadership"
+    },
+    {
+      "name": "External audit fieldwork start",
+      "type": "external_audit_readiness",
+      "scheduled_for": "2026-07-15",
+      "owner": "External Auditor"
+    }
+  ]
+}
