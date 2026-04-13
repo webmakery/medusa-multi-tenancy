@@ -3,6 +3,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { TENANT_MANAGEMENT_MODULE } from '../../../../../../modules/tenant-management';
 import TenantManagementModuleService from '../../../../../../modules/tenant-management/service';
 import { authorizeTenantAction } from '../../../_shared/authorization';
+import { requireTenantConfirmation } from '../../../../_shared/tenant-confirmation';
 
 export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   const tenantManagementService: TenantManagementModuleService = req.scope.resolve(TENANT_MANAGEMENT_MODULE);
@@ -11,6 +12,10 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   const authorization = await authorizeTenantAction(req, res, 'manage_members');
 
   if (!authorization.allowed) {
+    return;
+  }
+
+  if (!requireTenantConfirmation(req, res, { tenantId: tenant_id, operationLabel: 'remove tenant members' })) {
     return;
   }
 

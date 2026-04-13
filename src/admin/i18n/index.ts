@@ -53,6 +53,22 @@ const en = {
         },
       },
     },
+
+    tenantContext: {
+      current: 'Current tenant',
+      none: 'No tenant selected',
+      selectLabel: 'Switch tenant',
+      switchAction: 'Switch tenant',
+      messages: {
+        updated: 'Tenant context updated.',
+      },
+      errors: {
+        load: 'Could not load tenant memberships.',
+        switch: 'Could not switch tenant context.',
+        noneSelected: 'Select an active tenant before continuing.',
+      },
+    },
+
     salesChannels: {
       menuLabel: 'Sales channels',
       title: 'Sales channels',
@@ -100,7 +116,7 @@ const en = {
         install: 'Install app',
         installing: 'Installing…',
         uninstall: 'Uninstall',
-        confirmUninstall: 'Uninstall {{appName}}?',
+        confirmUninstall: 'Uninstall {{appName}} for tenant {{tenantId}}?',
       },
       messages: {
         installed: 'App installed successfully.',
@@ -250,6 +266,7 @@ const en = {
         failPayment: 'Mark payment failed',
         recoverPayment: 'Recover payment',
         expireGrace: 'Refresh grace state',
+        confirm: 'Confirm {{action}} for tenant {{tenantId}}? This cannot be undone.',
       },
       columns: {
         feature: 'Feature',

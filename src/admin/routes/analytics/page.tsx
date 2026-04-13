@@ -9,6 +9,7 @@ import {
   getAnalyticsTimeseries,
   getAnalyticsTopProducts,
 } from '../../lib/api/admin';
+import TenantContextSwitcher from '../../components/tenant-context-switcher';
 
 const today = new Date().toISOString().slice(0, 10);
 const thirtyDaysAgo = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -65,6 +66,7 @@ const AnalyticsPage = () => {
         <Text size="small" className="text-ui-fg-subtle mt-2">
           {t('admin.analytics.description')}
         </Text>
+        <TenantContextSwitcher />
       </Container>
 
       <Container className="p-6">

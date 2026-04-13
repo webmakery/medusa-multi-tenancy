@@ -4,6 +4,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 
 import { requireTenantRole, resolveAuthenticatedTenantAccess } from '../../_shared/tenant-access';
+import { requireTenantConfirmation } from '../../_shared/tenant-confirmation';
 
 interface SalesChannelRecord {
   id: string;
@@ -115,6 +116,10 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
   }
 
   const knex = req.scope.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
+  if (!requireTenantConfirmation(req, res, { tenantId: tenantAccess.tenantId!, operationLabel: 'delete this sales channel' })) {
+    return;
+  }
+
   const existing = await getTenantChannel(knex, tenantAccess.tenantId!, channelId);
 
   if (!existing) {

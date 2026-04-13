@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { getOnboardingChecklist, OnboardingChecklistItem, OnboardingDiagnostic, OnboardingFunnel } from '../../lib/api/admin';
+import TenantContextSwitcher from '../../components/tenant-context-switcher';
 
 const OnboardingStatusPage = () => {
   const { t } = useTranslation();
@@ -33,6 +34,7 @@ const OnboardingStatusPage = () => {
         <Text size="small" className="text-ui-fg-subtle mt-2">
           {t('admin.onboarding.description')}
         </Text>
+        <TenantContextSwitcher />
       </Container>
 
       <Container className="p-6">

@@ -16,12 +16,14 @@ import { useTranslation } from 'react-i18next';
 
 import {
   AppWebhookDeliveryLog,
+  getActiveTenantContext,
   getInstalledApps,
   getWebhookDeliveryLogs,
   installApp,
   InstalledApp,
   uninstallApp,
 } from '../../lib/api/admin';
+import TenantContextSwitcher from '../../components/tenant-context-switcher';
 
 const AVAILABLE_SCOPES = ['orders.read', 'orders.write', 'products.read', 'products.write', 'customers.read'];
 
@@ -115,13 +117,24 @@ const AppsPage = () => {
   };
 
   const onUninstall = async (app: InstalledApp) => {
-    const shouldUninstall = window.confirm(t('admin.apps.actions.confirmUninstall', { appName: app.app_name }));
+    const tenantContext = await getActiveTenantContext();
+    const confirmationTenantId = tenantContext.active_tenant_id || tenantContext.memberships?.[0]?.tenant_id || '';
+
+    if (!confirmationTenantId) {
+      setError(t('admin.tenantContext.errors.noneSelected'));
+      return;
+    }
+
+    const shouldUninstall = window.confirm(
+      t('admin.apps.actions.confirmUninstall', { appName: app.app_name, tenantId: confirmationTenantId })
+    );
+
     if (!shouldUninstall) return;
 
     setError('');
     setMessage('');
     try {
-      const response = await uninstallApp(app.id);
+      const response = await uninstallApp(app.id, confirmationTenantId);
       setMessage(response.message || t('admin.apps.messages.uninstalled'));
       await loadApps();
     } catch (err) {
@@ -136,6 +149,7 @@ const AppsPage = () => {
         <Text size="small" className="mt-2 text-ui-fg-subtle">
           {t('admin.apps.description')}
         </Text>
+        <TenantContextSwitcher />
         {isLoading ? <Text className="mt-4">{t('admin.shared.loading')}</Text> : null}
         {error ? <Text className="mt-2 text-ui-fg-error">{error}</Text> : null}
         {message ? <Text className="mt-2 text-ui-fg-interactive">{message}</Text> : null}
