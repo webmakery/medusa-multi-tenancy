@@ -2,14 +2,24 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 
 import { TENANT_MANAGEMENT_MODULE } from '../../../../modules/tenant-management';
 import TenantManagementModuleService, { TenantRole } from '../../../../modules/tenant-management/service';
+import { isTenantAccessBlocked } from '../../../../modules/tenant-management/lifecycle';
 import { getActorEmail } from '../../_shared/auth-context';
 
-type TenantAction = 'invite' | 'manage_members' | 'deactivate_tenant';
+type TenantAction =
+  | 'invite'
+  | 'manage_members'
+  | 'deactivate_tenant'
+  | 'suspend_tenant'
+  | 'reactivate_tenant'
+  | 'request_deletion';
 
 const ACTION_PERMISSIONS: Record<TenantAction, TenantRole[]> = {
   invite: ['owner', 'admin'],
   manage_members: ['owner', 'admin'],
   deactivate_tenant: ['owner'],
+  suspend_tenant: ['owner'],
+  reactivate_tenant: ['owner'],
+  request_deletion: ['owner'],
 };
 
 export async function authorizeTenantAction(
@@ -40,6 +50,12 @@ export async function authorizeTenantAction(
 
   if (!membership || membership.status !== 'active') {
     res.status(403).json({ message: 'You are not an active member of this tenant.' });
+    return { allowed: false };
+  }
+
+  const tenantStatus = await tenantManagementService.getTenantStatus(tenant_id);
+  if (action !== 'reactivate_tenant' && isTenantAccessBlocked(tenantStatus)) {
+    res.status(423).json({ message: `Tenant access is blocked while status is "${tenantStatus || 'unknown'}".` });
     return { allowed: false };
   }
 

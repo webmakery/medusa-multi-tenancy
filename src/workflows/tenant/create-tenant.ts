@@ -8,6 +8,7 @@ import { createSalesChannelsWorkflow, updateStoresWorkflow } from '@medusajs/med
 
 import { AUDIT_LOG_MODULE } from '../../modules/audit-log';
 import AuditLogModuleService from '../../modules/audit-log/service';
+import { TENANT_DELETION_RETENTION_DAYS } from '../../modules/tenant-management/lifecycle';
 
 export interface CreateTenantWorkflowInput {
   name: string;
@@ -22,6 +23,7 @@ interface CreatedTenant {
   slug: string;
   owner_email: string;
   status: string;
+  settings_json: Record<string, unknown>;
 }
 
 interface CreateTenantStepOutput {
@@ -50,6 +52,15 @@ const createTenantStep = createStep(
       slug: input.slug,
       owner_email: input.owner_email,
       status: 'active',
+      settings_json: {
+        locale: 'en-US',
+        timezone: 'UTC',
+        currency_code: 'usd',
+        lifecycle: {
+          billing_mode: 'preserve_on_suspension',
+          retention_days: TENANT_DELETION_RETENTION_DAYS,
+        },
+      },
     };
 
     await knex('tenant').insert(tenant);

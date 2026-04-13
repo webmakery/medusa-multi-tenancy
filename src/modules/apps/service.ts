@@ -226,7 +226,18 @@ class AppsModuleService extends MedusaService({
     const knex = this.getKnex();
 
     // tenant-scope-ignore: inbound route authenticates by app_id signature, tenant_id not available at this stage.
-    const credential = await knex('app_credential').where({ app_id: appId, is_active: true }).orderBy('created_at', 'desc').first();
+    const credential = await knex('app_credential')
+      .join('app_installation', 'app_installation.id', 'app_credential.app_id')
+      .join('tenant', 'tenant.tenant_id', 'app_installation.tenant_id')
+      .where({
+        'app_credential.app_id': appId,
+        'app_credential.is_active': true,
+        'app_installation.status': 'installed',
+        'tenant.status': 'active',
+      })
+      .select('app_credential.*')
+      .orderBy('app_credential.created_at', 'desc')
+      .first();
 
     if (!credential) {
       return false;
@@ -252,11 +263,13 @@ class AppsModuleService extends MedusaService({
     const baseQuery = knex('app_webhook')
       .join('app_installation', 'app_installation.id', 'app_webhook.app_id')
       .join('app_credential', 'app_credential.app_id', 'app_installation.id')
+      .join('tenant', 'tenant.tenant_id', 'app_installation.tenant_id')
       .where({
         'app_webhook.event_name': input.event_name,
         'app_webhook.is_active': true,
         'app_installation.status': 'installed',
         'app_credential.is_active': true,
+        'tenant.status': 'active',
       })
       .select(
         'app_webhook.app_id',
