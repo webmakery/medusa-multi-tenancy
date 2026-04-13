@@ -31,13 +31,45 @@ class AnalyticsModuleService extends MedusaService({
   AnalyticsRollupDaily,
   AnalyticsTopProductDaily,
 }) {
+  private static readonly EVENT_METADATA_ALLOWLIST: Record<RecordEventInput['event_type'], string[]> = {
+    session_started: ['channel', 'campaign', 'actor_hash'],
+    checkout_started: ['channel', 'campaign', 'actor_hash'],
+    checkout_completed: ['channel', 'campaign', 'actor_hash'],
+  };
+
+  private static readonly PII_KEY_PATTERN = /(email|phone|name|address|ip|ssn|card|dob)/i;
+  private static readonly RAW_EVENT_RETENTION_DAYS = 30;
+  private static readonly ROLLUP_RETENTION_DAYS = 400;
+
   private getKnex(): Knex {
     return (this as any).__container__.resolve(ContainerRegistrationKeys.PG_CONNECTION) as Knex;
+  }
+
+  private sanitizeMetadata(
+    eventType: RecordEventInput['event_type'],
+    metadata?: Record<string, unknown>
+  ): Record<string, unknown> | null {
+    if (!metadata) {
+      return null;
+    }
+
+    const allowedKeys = AnalyticsModuleService.EVENT_METADATA_ALLOWLIST[eventType];
+    const sanitized = Object.entries(metadata).reduce<Record<string, unknown>>((acc, [key, value]) => {
+      if (!allowedKeys.includes(key) || AnalyticsModuleService.PII_KEY_PATTERN.test(key)) {
+        return acc;
+      }
+
+      acc[key] = value;
+      return acc;
+    }, {});
+
+    return Object.keys(sanitized).length ? sanitized : null;
   }
 
   async recordEvent(input: RecordEventInput) {
     const knex = this.getKnex();
     const eventTimestamp = input.event_timestamp ? new Date(input.event_timestamp) : new Date();
+    const sanitizedMetadata = this.sanitizeMetadata(input.event_type, input.metadata);
 
     await knex('analytics_event').insert({
       id: randomUUID(),
@@ -50,7 +82,7 @@ class AnalyticsModuleService extends MedusaService({
       currency_code: input.currency_code || null,
       amount_cents: input.amount_cents || null,
       items: input.items ? JSON.stringify(input.items) : null,
-      metadata: input.metadata ? JSON.stringify(input.metadata) : null,
+      metadata: sanitizedMetadata ? JSON.stringify(sanitizedMetadata) : null,
     });
   }
 
@@ -225,6 +257,44 @@ class AnalyticsModuleService extends MedusaService({
       quantity: Number(row.quantity || 0),
       gmv_cents: Number(row.gmv_cents || 0),
     }));
+  }
+
+  async enforceRetentionPolicies() {
+    const knex = this.getKnex();
+
+    const [rawDeletedResult, rollupDeletedResult, topProductsDeletedResult] = await Promise.all([
+      // tenant-scope-ignore: retention must enforce policy across all tenants for global expiry.
+      knex('analytics_event')
+        .whereNotNull('processed_at')
+        .andWhere(
+          'event_date',
+          '<',
+          knex.raw(`CURRENT_DATE - INTERVAL '${AnalyticsModuleService.RAW_EVENT_RETENTION_DAYS} days'`)
+        )
+        .del(),
+      // tenant-scope-ignore: retention must enforce policy across all tenants for global expiry.
+      knex('analytics_rollup_daily')
+        .where(
+          'rollup_date',
+          '<',
+          knex.raw(`CURRENT_DATE - INTERVAL '${AnalyticsModuleService.ROLLUP_RETENTION_DAYS} days'`)
+        )
+        .del(),
+      // tenant-scope-ignore: retention must enforce policy across all tenants for global expiry.
+      knex('analytics_top_product_daily')
+        .where(
+          'rollup_date',
+          '<',
+          knex.raw(`CURRENT_DATE - INTERVAL '${AnalyticsModuleService.ROLLUP_RETENTION_DAYS} days'`)
+        )
+        .del(),
+    ]);
+
+    return {
+      analytics_event_deleted: rawDeletedResult,
+      analytics_rollup_daily_deleted: rollupDeletedResult,
+      analytics_top_product_daily_deleted: topProductsDeletedResult,
+    };
   }
 }
 

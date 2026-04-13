@@ -1,0 +1,119 @@
+version: 1
+updated_at: 2026-04-13
+
+analytics_taxonomy:
+  common_required_fields:
+    - event_id
+    - tenant_id
+    - event_type
+    - event_timestamp
+    - event_date
+    - ingest_source
+    - schema_version
+  pii_policy:
+    allowed_in_events: false
+    rules:
+      - Never send direct identifiers (email, phone, full name, street address, IP address, payment instrument).
+      - Use one-way salted hashes when user correlation is required (for example actor_hash).
+      - Metadata is allow-listed per event type; unknown keys are dropped before persistence.
+      - Any suspected PII key is blocked (`email`, `phone`, `name`, `address`, `ip`, `ssn`, `card`, `dob`).
+  events:
+    session_started:
+      required_fields:
+        - session_id
+      optional_fields:
+        - metadata.channel
+        - metadata.campaign
+        - metadata.actor_hash
+      tenant_safe_notes:
+        - session_id must be opaque and non-PII.
+    checkout_started:
+      required_fields:
+        - session_id
+      optional_fields:
+        - currency_code
+        - metadata.channel
+        - metadata.campaign
+        - metadata.actor_hash
+      tenant_safe_notes:
+        - cart/order numbers from external systems are not accepted as session_id.
+    checkout_completed:
+      required_fields:
+        - order_id
+        - currency_code
+        - amount_cents
+      optional_fields:
+        - session_id
+        - items[].product_id
+        - items[].title
+        - items[].quantity
+        - items[].unit_price
+        - metadata.channel
+        - metadata.actor_hash
+      tenant_safe_notes:
+        - order_id must be store-local opaque identifier and tenant-scoped.
+
+data_retention_policy:
+  classes:
+    analytics_raw_events:
+      table: analytics_event
+      retention_days: 30
+      expiry_rule: "Delete processed records where event_date < current_date - retention_days"
+      legal_hold_support: false
+      owner: data-platform
+    analytics_daily_rollups:
+      table: analytics_rollup_daily
+      retention_days: 400
+      expiry_rule: "Delete rows where rollup_date < current_date - retention_days"
+      legal_hold_support: false
+      owner: analytics-engineering
+    analytics_top_products_daily:
+      table: analytics_top_product_daily
+      retention_days: 400
+      expiry_rule: "Delete rows where rollup_date < current_date - retention_days"
+      legal_hold_support: false
+      owner: analytics-engineering
+
+data_quality_monitors:
+  defaults:
+    schedule: "*/10 * * * *"
+    severity: high
+  monitors:
+    - id: duplicate_event_rate
+      metric: "Duplicate event IDs over total ingested events"
+      owner: data-platform
+      expectation: "<= 0.10% over rolling 1 hour"
+      remediation: "Deduplicate at ingest, verify producer retries with stable IDs"
+    - id: rollup_loss_rate
+      metric: "Absolute delta between raw checkout_completed counts and rollup checkout_completed_count"
+      owner: analytics-engineering
+      expectation: "<= 0.20% per tenant/day"
+      remediation: "Re-run tenant/date aggregation, inspect failed jobs"
+    - id: late_arrival_share
+      metric: "Raw events arriving > 24h after event_timestamp"
+      owner: data-platform
+      expectation: "<= 1.00% over rolling 24 hours"
+      remediation: "Check queue lag, source retries, and clock skew"
+    - id: metric_freshness
+      metric: "Age of latest analytics_rollup_daily entry"
+      owner: analytics-engineering
+      expectation: "< 90 minutes"
+      remediation: "Trigger rollup job and inspect worker health"
+
+core_metric_ownership:
+  - metric: gmv_cents
+    business_owner: finance
+    technical_owner: analytics-engineering
+    source: analytics_rollup_daily.gmv_cents
+  - metric: orders_count
+    business_owner: commerce-ops
+    technical_owner: analytics-engineering
+    source: analytics_rollup_daily.orders_count
+  - metric: conversion_proxy
+    business_owner: growth
+    technical_owner: analytics-engineering
+    source: analytics_rollup_daily.conversion_proxy
+  - metric: sessions_count
+    business_owner: growth
+    technical_owner: data-platform
+    source: analytics_rollup_daily.sessions_count
