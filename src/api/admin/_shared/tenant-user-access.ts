@@ -60,6 +60,24 @@ function isPlatformAdminEmail(email: string): boolean {
   return getPlatformAdminEmails().has(email.trim().toLowerCase());
 }
 
+function normalizeTenantScopeId(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.toLowerCase() === 'system') {
+    return null;
+  }
+
+  return normalized;
+}
+
 function getAutoCreateEnabled(): boolean {
   return parseBooleanEnv(process.env.AUTO_CREATE_TENANT_ON_FIRST_LOGIN, true);
 }
@@ -205,8 +223,8 @@ export async function resolveTenantUserAccess(req: MedusaRequest): Promise<Resol
 
   const accessRecord = resolved.accessRecord as TenantUserAccessRecord;
   const isPlatformAdmin = Boolean(accessRecord.is_platform_admin);
-  const assignedTenantId = accessRecord.tenant_id || null;
-  const activeTenantId = accessRecord.active_tenant_id || null;
+  const assignedTenantId = normalizeTenantScopeId(accessRecord.tenant_id);
+  const activeTenantId = normalizeTenantScopeId(accessRecord.active_tenant_id);
   const effectiveTenantId = isPlatformAdmin ? activeTenantId : assignedTenantId;
 
   return {
