@@ -9,6 +9,54 @@ const CORRELATION_ID_HEADER = 'x-correlation-id';
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 120;
 const MUTATION_RATE_LIMIT_WINDOW_MS = 60_000;
+const QUOTA_WINDOW_MS = 60 * 60 * 1000;
+const ABUSE_WINDOW_MS = 60_000;
+const ABUSE_ERROR_WINDOW_MS = 5 * 60 * 1000;
+
+type EndpointClass = 'auth' | 'write-heavy' | 'reporting' | 'api-exports';
+
+type EndpointClassQuotaConfig = {
+  throttlePerMinute: number;
+  softQuotaPerHour: number;
+  hardQuotaPerHour: number;
+  alertThresholdRatio: number;
+  overageGraceRequests: number;
+};
+
+const ENDPOINT_CLASS_LIMITS: Record<EndpointClass, EndpointClassQuotaConfig> = {
+  auth: {
+    throttlePerMinute: 60,
+    softQuotaPerHour: 600,
+    hardQuotaPerHour: 750,
+    alertThresholdRatio: 0.8,
+    overageGraceRequests: 25,
+  },
+  'write-heavy': {
+    throttlePerMinute: 180,
+    softQuotaPerHour: 2_500,
+    hardQuotaPerHour: 3_000,
+    alertThresholdRatio: 0.8,
+    overageGraceRequests: 100,
+  },
+  reporting: {
+    throttlePerMinute: 90,
+    softQuotaPerHour: 800,
+    hardQuotaPerHour: 1_000,
+    alertThresholdRatio: 0.75,
+    overageGraceRequests: 40,
+  },
+  'api-exports': {
+    throttlePerMinute: 20,
+    softQuotaPerHour: 120,
+    hardQuotaPerHour: 160,
+    alertThresholdRatio: 0.7,
+    overageGraceRequests: 10,
+  },
+};
+
+type TenantClassOverride = Partial<
+  Pick<EndpointClassQuotaConfig, 'throttlePerMinute' | 'softQuotaPerHour' | 'hardQuotaPerHour' | 'overageGraceRequests'>
+>;
 
 type MutationLimitConfig = {
   method: string;
@@ -55,8 +103,58 @@ type RateLimitBucket = {
   resetAt: number;
 };
 
+type RollingUsageBucket = {
+  count: number;
+  resetAt: number;
+};
+
+type AbuseSpikeBucket = {
+  count: number;
+  previousCount: number;
+  resetAt: number;
+};
+
+type ErrorRateBucket = {
+  total: number;
+  errors: number;
+  resetAt: number;
+};
+
 const rateLimitBuckets = new Map<string, RateLimitBucket>();
 const tenantMutationRateLimitBuckets = new Map<string, RateLimitBucket>();
+const tenantEndpointClassBuckets = new Map<string, RateLimitBucket>();
+const tenantEndpointClassQuotaBuckets = new Map<string, RollingUsageBucket>();
+const tenantEndpointClassAbuseBuckets = new Map<string, AbuseSpikeBucket>();
+const tenantErrorRateBuckets = new Map<string, ErrorRateBucket>();
+const quotaAlertDeduplication = new Set<string>();
+const abuseAlertDeduplication = new Set<string>();
+
+function parseTenantLimitOverrides(): Record<string, Partial<Record<EndpointClass, TenantClassOverride>>> {
+  const rawValue = process.env.TENANT_LIMIT_OVERRIDES;
+
+  if (!rawValue) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue);
+    if (typeof parsed === 'object' && parsed !== null) {
+      return parsed;
+    }
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        level: 'warn',
+        event: 'tenant_limit_override_parse_failed',
+        message: 'Ignoring invalid TENANT_LIMIT_OVERRIDES JSON.',
+      })
+    );
+  }
+
+  return {};
+}
+
+const tenantLimitOverrides = parseTenantLimitOverrides();
 
 function normalizeHeaderValue(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) {
@@ -98,6 +196,32 @@ function rateLimitCleanup(now: number) {
       tenantMutationRateLimitBuckets.delete(key);
     }
   }
+
+  for (const [key, bucket] of tenantEndpointClassBuckets.entries()) {
+    if (bucket.resetAt <= now) {
+      tenantEndpointClassBuckets.delete(key);
+    }
+  }
+
+  for (const [key, bucket] of tenantEndpointClassQuotaBuckets.entries()) {
+    if (bucket.resetAt <= now) {
+      tenantEndpointClassQuotaBuckets.delete(key);
+      quotaAlertDeduplication.delete(key);
+    }
+  }
+
+  for (const [key, bucket] of tenantEndpointClassAbuseBuckets.entries()) {
+    if (bucket.resetAt <= now) {
+      tenantEndpointClassAbuseBuckets.delete(key);
+      abuseAlertDeduplication.delete(key);
+    }
+  }
+
+  for (const [key, bucket] of tenantErrorRateBuckets.entries()) {
+    if (bucket.resetAt <= now) {
+      tenantErrorRateBuckets.delete(key);
+    }
+  }
 }
 
 function getTenantRateLimitIdentity(req: MedusaRequest): string {
@@ -117,6 +241,54 @@ function getTenantRateLimitIdentity(req: MedusaRequest): string {
   }
 
   return 'system';
+}
+
+function classifyEndpoint(req: MedusaRequest): EndpointClass {
+  const pathname = (req.path || req.originalUrl || '').split('?')[0].toLowerCase();
+  const method = req.method.toUpperCase();
+
+  if (
+    pathname.includes('/auth') ||
+    pathname.includes('/login') ||
+    pathname.includes('/signup') ||
+    pathname.includes('/password') ||
+    pathname.includes('/token')
+  ) {
+    return 'auth';
+  }
+
+  if (
+    pathname.includes('/export') ||
+    pathname.includes('/exports') ||
+    pathname.includes('/download')
+  ) {
+    return 'api-exports';
+  }
+
+  if (
+    pathname.includes('/analytics') ||
+    pathname.includes('/report') ||
+    pathname.includes('/timeseries') ||
+    pathname.includes('/top-products')
+  ) {
+    return 'reporting';
+  }
+
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    return 'write-heavy';
+  }
+
+  return 'reporting';
+}
+
+function getLimitConfig(tenantId: string, endpointClass: EndpointClass): EndpointClassQuotaConfig {
+  const base = ENDPOINT_CLASS_LIMITS[endpointClass];
+  const override = tenantLimitOverrides?.[tenantId]?.[endpointClass] ?? {};
+
+  return {
+    ...base,
+    ...override,
+  };
 }
 
 function tenantIpRateLimitMiddleware(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
@@ -191,16 +363,178 @@ function tenantMutationRateLimitMiddleware(req: MedusaRequest, res: MedusaRespon
   return next();
 }
 
+function tenantEndpointClassRateLimitAndQuotaMiddleware(
+  req: MedusaRequest,
+  res: MedusaResponse,
+  next: MedusaNextFunction
+) {
+  const now = Date.now();
+  rateLimitCleanup(now);
+
+  const tenantId = getTenantRateLimitIdentity(req);
+  const endpointClass = classifyEndpoint(req);
+  const classConfig = getLimitConfig(tenantId, endpointClass);
+  const throttleKey = `${tenantId}:${endpointClass}:throttle`;
+
+  const throttleBucket = tenantEndpointClassBuckets.get(throttleKey);
+  if (!throttleBucket || throttleBucket.resetAt <= now) {
+    tenantEndpointClassBuckets.set(throttleKey, {
+      count: 1,
+      resetAt: now + RATE_LIMIT_WINDOW_MS,
+    });
+  } else {
+    if (throttleBucket.count >= classConfig.throttlePerMinute) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((throttleBucket.resetAt - now) / 1000));
+      res.setHeader('retry-after', retryAfterSeconds.toString());
+
+      return res.status(429).json({
+        message: `Throttle exceeded for ${endpointClass} requests on this tenant.`,
+        tenant_id: tenantId,
+        endpoint_class: endpointClass,
+      });
+    }
+
+    throttleBucket.count += 1;
+  }
+
+  const quotaKey = `${tenantId}:${endpointClass}:quota`;
+  const quotaBucket = tenantEndpointClassQuotaBuckets.get(quotaKey);
+  let usageCount = 1;
+  let quotaResetAt = now + QUOTA_WINDOW_MS;
+
+  if (!quotaBucket || quotaBucket.resetAt <= now) {
+    tenantEndpointClassQuotaBuckets.set(quotaKey, {
+      count: usageCount,
+      resetAt: quotaResetAt,
+    });
+  } else {
+    quotaBucket.count += 1;
+    usageCount = quotaBucket.count;
+    quotaResetAt = quotaBucket.resetAt;
+  }
+
+  const alertThreshold = Math.ceil(classConfig.softQuotaPerHour * classConfig.alertThresholdRatio);
+  const hardWithOverage = classConfig.hardQuotaPerHour + classConfig.overageGraceRequests;
+
+  if (usageCount >= alertThreshold && !quotaAlertDeduplication.has(`${quotaKey}:alert`)) {
+    quotaAlertDeduplication.add(`${quotaKey}:alert`);
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        event: 'tenant_usage_alert_threshold_reached',
+        tenantId,
+        endpointClass,
+        usageCount,
+        alertThreshold,
+        softQuota: classConfig.softQuotaPerHour,
+        hardQuota: classConfig.hardQuotaPerHour,
+      })
+    );
+  }
+
+  if (usageCount > classConfig.softQuotaPerHour) {
+    res.setHeader('x-usage-quota-state', 'soft-limit-overage');
+    res.setHeader('x-usage-quota-soft-limit', classConfig.softQuotaPerHour.toString());
+    res.setHeader('x-usage-quota-hard-limit', classConfig.hardQuotaPerHour.toString());
+    res.setHeader('x-usage-overage-grace', classConfig.overageGraceRequests.toString());
+  }
+
+  if (usageCount > classConfig.hardQuotaPerHour && usageCount <= hardWithOverage) {
+    res.setHeader('x-usage-quota-state', 'hard-limit-overage-grace');
+  }
+
+  if (usageCount > hardWithOverage) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((quotaResetAt - now) / 1000));
+    res.setHeader('retry-after', retryAfterSeconds.toString());
+
+    return res.status(429).json({
+      message: `Hard quota exceeded for ${endpointClass} requests on this tenant.`,
+      tenant_id: tenantId,
+      endpoint_class: endpointClass,
+      soft_quota_per_hour: classConfig.softQuotaPerHour,
+      hard_quota_per_hour: classConfig.hardQuotaPerHour,
+      overage_grace_requests: classConfig.overageGraceRequests,
+      retry_after_seconds: retryAfterSeconds,
+    });
+  }
+
+  const abuseKey = `${tenantId}:${endpointClass}:abuse`;
+  const abuseBucket = tenantEndpointClassAbuseBuckets.get(abuseKey);
+
+  if (!abuseBucket || abuseBucket.resetAt <= now) {
+    tenantEndpointClassAbuseBuckets.set(abuseKey, {
+      count: 1,
+      previousCount: abuseBucket?.count ?? 0,
+      resetAt: now + ABUSE_WINDOW_MS,
+    });
+  } else {
+    abuseBucket.count += 1;
+    const spikeThreshold = Math.max(25, abuseBucket.previousCount * 3);
+
+    if (abuseBucket.count >= spikeThreshold && !abuseAlertDeduplication.has(abuseKey)) {
+      abuseAlertDeduplication.add(abuseKey);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          event: 'tenant_abuse_sudden_spike',
+          tenantId,
+          endpointClass,
+          currentWindowCount: abuseBucket.count,
+          previousWindowCount: abuseBucket.previousCount,
+          spikeThreshold,
+        })
+      );
+    }
+  }
+
+  return next();
+}
+
 function structuredErrorLoggingMiddleware(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
   const startedAt = Date.now();
 
   res.on('finish', () => {
+    const tenantId = getTenantRateLimitIdentity(req);
+    const endpointClass = classifyEndpoint(req);
+    const now = Date.now();
+    const errorRateKey = `${tenantId}:${endpointClass}:error-rate`;
+    const errorRateBucket = tenantErrorRateBuckets.get(errorRateKey);
+
+    if (!errorRateBucket || errorRateBucket.resetAt <= now) {
+      tenantErrorRateBuckets.set(errorRateKey, {
+        total: 1,
+        errors: res.statusCode >= 400 ? 1 : 0,
+        resetAt: now + ABUSE_ERROR_WINDOW_MS,
+      });
+    } else {
+      errorRateBucket.total += 1;
+      if (res.statusCode >= 400) {
+        errorRateBucket.errors += 1;
+      }
+
+      if (errorRateBucket.total >= 20) {
+        const errorRate = errorRateBucket.errors / errorRateBucket.total;
+        if (errorRate >= 0.35) {
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              event: 'tenant_abuse_high_error_rate',
+              tenantId,
+              endpointClass,
+              windowTotalRequests: errorRateBucket.total,
+              windowErroredRequests: errorRateBucket.errors,
+              errorRate,
+            })
+          );
+        }
+      }
+    }
+
     if (res.statusCode < 400) {
       return;
     }
 
     const durationMs = Date.now() - startedAt;
-    const tenantId = tenantContextStorage.getStore()?.tenantId ?? 'system';
     const correlationId = normalizeHeaderValue(req.headers[CORRELATION_ID_HEADER]);
 
     console.error(
@@ -211,6 +545,7 @@ function structuredErrorLoggingMiddleware(req: MedusaRequest, res: MedusaRespons
         method: req.method,
         path: req.originalUrl,
         tenantId,
+        endpointClass,
         ip: getClientIp(req),
         correlationId,
         durationMs,
@@ -230,6 +565,7 @@ export default defineMiddlewares({
         tenantContextMiddleware,
         tenantIpRateLimitMiddleware,
         tenantMutationRateLimitMiddleware,
+        tenantEndpointClassRateLimitAndQuotaMiddleware,
         structuredErrorLoggingMiddleware,
       ],
     },
@@ -240,6 +576,7 @@ export default defineMiddlewares({
         tenantContextMiddleware,
         tenantIpRateLimitMiddleware,
         tenantMutationRateLimitMiddleware,
+        tenantEndpointClassRateLimitAndQuotaMiddleware,
         structuredErrorLoggingMiddleware,
       ],
     },
