@@ -159,16 +159,39 @@ const en = {
     onboarding: {
       menuLabel: 'Onboarding',
       title: 'Onboarding checklist',
-      description: 'Monitor completion of key setup milestones.',
+      description: 'Track funnel milestones and resolve setup blockers before launch.',
       progress: '{{completed}} of {{total}} checklist items completed',
+      sections: {
+        checklist: 'Guided setup checklist',
+        funnel: 'Onboarding funnel',
+        diagnostics: 'Setup diagnostics',
+        churn: 'Monthly churn review',
+      },
       errors: {
         load: 'Could not load onboarding checklist.',
       },
       items: {
-        create_store_profile: 'Create store profile',
+        signup: 'Complete signup',
         invite_team: 'Invite team member',
-        add_sales_channel: 'Add sales channel',
-        review_launch_readiness: 'Review launch readiness',
+        first_value_action: 'Complete first value action',
+        launch_readiness: 'Review launch readiness',
+      },
+      funnel: {
+        signup: 'Signup completed',
+        invite: 'Team invited',
+        value: 'First value action',
+        firstValueAt: 'First value recorded on {{date}}',
+        missingValue: 'No first value action has been recorded yet.',
+      },
+      diagnostics: {
+        ok: 'Healthy',
+        blocked: 'Blocked',
+      },
+      actions: {
+        open: 'Open',
+      },
+      churn: {
+        description: 'Review top churn reasons monthly and map each reason to product and operations owners.',
       },
     },
     analytics: {

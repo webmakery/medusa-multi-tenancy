@@ -32,6 +32,23 @@ export interface OnboardingChecklistItem {
   key: string;
   label?: string;
   is_completed: boolean;
+  hint?: string;
+  action_label?: string;
+  action_path?: string;
+}
+
+export interface OnboardingFunnel {
+  signup_completed: boolean;
+  team_invited: boolean;
+  first_value_action_completed: boolean;
+  first_value_at?: string | null;
+}
+
+export interface OnboardingDiagnostic {
+  key: 'domain' | 'webhooks' | 'permissions';
+  label: string;
+  status: 'ok' | 'blocked';
+  detail: string;
 }
 
 export interface AppWebhook {
@@ -263,6 +280,8 @@ interface OnboardingChecklistResponse {
   completed?: number;
   checklist?: OnboardingChecklistItem[];
   items?: OnboardingChecklistItem[];
+  funnel?: OnboardingFunnel;
+  diagnostics?: OnboardingDiagnostic[];
 }
 
 export async function getOnboardingChecklist() {
@@ -277,6 +296,8 @@ export async function getOnboardingChecklist() {
     count: response.count,
     completed,
     checklist,
+    funnel: response.funnel,
+    diagnostics: response.diagnostics || [],
   };
 }
 
