@@ -1,0 +1,17 @@
+diff --git a/node_modules/@medusajs/dashboard/src/routes/login/login.tsx b/node_modules/@medusajs/dashboard/src/routes/login/login.tsx
+--- a/node_modules/@medusajs/dashboard/src/routes/login/login.tsx
++++ b/node_modules/@medusajs/dashboard/src/routes/login/login.tsx
+@@ -169,6 +169,13 @@
+             ]}
+           />
+         </span>
++        <Link
++          to="/app/register"
++          className="text-ui-fg-interactive txt-small text-center transition-fg hover:text-ui-fg-interactive-hover focus-visible:text-ui-fg-interactive-hover mb-4 font-medium outline-none"
++          aria-label="Open tenant registration form"
++        >
++          Don&apos;t have an account? Register here
++        </Link>
+       </div>
+     </div>
+   )
