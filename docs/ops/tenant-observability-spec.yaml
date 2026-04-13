@@ -1,4 +1,4 @@
-version: 1
+version: 2
 telemetry:
   stream: tenant_metric_http_request
   required_labels:
@@ -6,6 +6,9 @@ telemetry:
     - endpoint_class
     - method
     - status_code
+    - plan_code
+    - service_tier
+    - operation
   required_dimensions:
     - trace_id
     - span_id
@@ -18,26 +21,200 @@ telemetry:
       - actor_hash
       - ip_hash
 
+slis:
+  - id: login-success
+    operation: login
+    description: Successful interactive and API login attempts.
+    event_stream: tenant_metric_http_request
+    selector: "endpoint_class='auth' AND operation='login'"
+    indicator:
+      expression: "sum(status_code < 500) / count(*)"
+      unit: ratio
+  - id: api-latency
+    operation: api-request
+    description: User-facing API request latency for tenant-scoped endpoints.
+    event_stream: tenant_metric_http_request
+    selector: "endpoint_class IN ('auth','write-heavy','reporting')"
+    indicator:
+      expression: "p95(duration_ms)"
+      unit: milliseconds
+  - id: report-generation-latency
+    operation: report-generation
+    description: Time from report request accepted to report ready.
+    event_stream: tenant_metric_job_report_generation
+    selector: "job_type='report_generation'"
+    indicator:
+      expression: "p95(duration_ms)"
+      unit: milliseconds
+  - id: webhook-delivery-success
+    operation: webhook-delivery
+    description: Outbound app webhook deliveries completed without terminal failure.
+    event_stream: tenant_metric_webhook_delivery
+    selector: "delivery_status IN ('delivered','failed')"
+    indicator:
+      expression: "sum(delivery_status='delivered') / count(*)"
+      unit: ratio
+  - id: background-job-completion
+    operation: background-job
+    description: Background jobs completing successfully by tenant and queue.
+    event_stream: tenant_metric_background_job
+    selector: "job_status IN ('completed','failed')"
+    indicator:
+      expression: "sum(job_status='completed') / count(*)"
+      unit: ratio
+
+service_tiers:
+  - tier: starter
+    plan_codes:
+      - starter
+    slos:
+      - sli_id: login-success
+        target: "99.5%"
+        window: 30d
+        error_budget: "0.5%"
+      - sli_id: api-latency
+        target: "95% <= 900ms"
+        window: 30d
+        error_budget: "5% requests > 900ms"
+      - sli_id: report-generation-latency
+        target: "95% <= 120000ms"
+        window: 30d
+        error_budget: "5% reports > 120s"
+      - sli_id: webhook-delivery-success
+        target: "99.0%"
+        window: 30d
+        error_budget: "1.0%"
+      - sli_id: background-job-completion
+        target: "99.0%"
+        window: 30d
+        error_budget: "1.0%"
+  - tier: growth
+    plan_codes:
+      - growth
+      - pro
+    slos:
+      - sli_id: login-success
+        target: "99.9%"
+        window: 30d
+        error_budget: "0.1%"
+      - sli_id: api-latency
+        target: "95% <= 600ms"
+        window: 30d
+        error_budget: "5% requests > 600ms"
+      - sli_id: report-generation-latency
+        target: "95% <= 60000ms"
+        window: 30d
+        error_budget: "5% reports > 60s"
+      - sli_id: webhook-delivery-success
+        target: "99.5%"
+        window: 30d
+        error_budget: "0.5%"
+      - sli_id: background-job-completion
+        target: "99.5%"
+        window: 30d
+        error_budget: "0.5%"
+  - tier: enterprise
+    plan_codes:
+      - enterprise
+    slos:
+      - sli_id: login-success
+        target: "99.95%"
+        window: 30d
+        error_budget: "0.05%"
+      - sli_id: api-latency
+        target: "95% <= 400ms"
+        window: 30d
+        error_budget: "5% requests > 400ms"
+      - sli_id: report-generation-latency
+        target: "95% <= 30000ms"
+        window: 30d
+        error_budget: "5% reports > 30s"
+      - sli_id: webhook-delivery-success
+        target: "99.9%"
+        window: 30d
+        error_budget: "0.1%"
+      - sli_id: background-job-completion
+        target: "99.9%"
+        window: 30d
+        error_budget: "0.1%"
+
+alert_routing:
+  budgets:
+    fast_burn:
+      description: Detects rapid error-budget exhaustion.
+      condition: "burn_rate_1h >= 4 AND burn_rate_6h >= 2"
+      notify:
+        - reliability-pager
+        - oncall-primary
+      severity: critical
+      response_sla: 15m
+    slow_burn:
+      description: Detects sustained budget pressure.
+      condition: "burn_rate_6h >= 1 AND burn_rate_3d >= 1"
+      notify:
+        - reliability-triage
+        - service-owner
+      severity: high
+      response_sla: 4h
+  escalation_rules:
+    - when: "fast_burn for 30m OR budget_remaining <= 30%"
+      action: "open incident and assign incident commander"
+    - when: "slow_burn for 24h OR budget_remaining <= 50%"
+      action: "create reliability improvement ticket for the owning team"
+
+reliability_reviews:
+  cadence: weekly
+  meeting: "Weekly Reliability Review"
+  attendees:
+    - sre-oncall
+    - product-engineering-owner
+    - service-owner
+    - support-representative
+  agenda:
+    - review previous week's SLI/SLO performance by tier and top tenants
+    - review all fast-burn and slow-burn alerts fired
+    - review active and closed budget-violation action items
+    - decide freeze/launch guards for services with depleted budgets
+  action_tracking:
+    system_of_record: reliability-action-log
+    required_fields:
+      - owner
+      - due_date
+      - linked_service
+      - linked_tier
+      - mitigation_type
+      - status
+    policy:
+      - "Any service/tier over budget must have an action item within 1 business day."
+      - "Open action items are reviewed every weekly meeting until closed."
+      - "Repeat violations for 2 consecutive weeks require director-level review."
+
 dashboards:
   - name: tenant-health-latency
     description: Per-tenant latency and saturation.
     panels:
       - title: p95 latency by tenant
         query: "p95(duration_ms) by tenant_id"
+      - title: p95 API latency by tier
+        query: "p95(duration_ms{operation='api-request'}) by service_tier"
       - title: p99 reporting latency
-        query: "p99(duration_ms{endpoint_class='reporting'}) by tenant_id"
+        query: "p99(duration_ms{operation='report-generation'}) by tenant_id"
   - name: tenant-health-errors
     description: Per-tenant failures and error budget burn.
     panels:
-      - title: error rate by tenant
-        query: "sum(status_code>=400)/count(*) by tenant_id"
-      - title: 5xx rate by tenant
-        query: "sum(status_code>=500)/count(*) by tenant_id"
+      - title: login success ratio by tier
+        query: "sum(status_code<500{operation='login'})/count({operation='login'}) by service_tier"
+      - title: webhook delivery success by tenant
+        query: "sum(delivery_status='delivered')/count(*) by tenant_id"
+      - title: error budget remaining by service tier
+        query: "min(error_budget_remaining_ratio) by service_tier,sli_id"
   - name: tenant-health-queue-lag
     description: Queue lag and backlog by tenant.
     panels:
       - title: queue lag p95 by tenant
         query: "p95(tenant_queue_lag_ms) by tenant_id"
+      - title: background job completion ratio by queue
+        query: "sum(job_status='completed')/count(*) by queue_name"
       - title: queue depth by tenant
         query: "max(tenant_queue_depth) by tenant_id,queue_name"
   - name: tenant-health-usage-saturation
@@ -71,41 +248,3 @@ alerts:
     condition: ">= 1 event in 5m"
     severity: medium
     notify: oncall-primary
-
-slos:
-  - operation: login
-    selector:
-      endpoint_class: auth
-    objectives:
-      - metric: availability
-        target: "99.9%"
-        window: 30d
-        success_definition: status_code < 500
-      - metric: latency
-        target: "95% <= 400ms"
-        window: 30d
-  - operation: create_update
-    selector:
-      endpoint_class: write-heavy
-    objectives:
-      - metric: availability
-        target: "99.5%"
-        window: 30d
-        success_definition: status_code < 500
-      - metric: latency
-        target: "95% <= 800ms"
-        window: 30d
-  - operation: reporting
-    selector:
-      endpoint_class: reporting
-    objectives:
-      - metric: availability
-        target: "99.0%"
-        window: 30d
-        success_definition: status_code < 500
-      - metric: latency
-        target: "95% <= 2000ms"
-        window: 30d
-      - metric: latency
-        target: "99% <= 5000ms"
-        window: 30d
