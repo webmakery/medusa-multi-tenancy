@@ -5,6 +5,7 @@ import { TENANT_MANAGEMENT_MODULE } from '../../../modules/tenant-management';
 import TenantManagementModuleService, { TenantRole } from '../../../modules/tenant-management/service';
 import { isTenantAccessBlocked } from '../../../modules/tenant-management/lifecycle';
 import { getActiveTenantIdFromAuthContext, getActorEmail, getTenantRoleFromAuthContext } from './auth-context';
+import { resolveTenantUserAccess } from './tenant-user-access';
 
 export async function resolveAuthenticatedTenantAccess(req: MedusaRequest): Promise<{
   tenantId?: string;
@@ -12,19 +13,20 @@ export async function resolveAuthenticatedTenantAccess(req: MedusaRequest): Prom
   actorRole?: TenantRole;
   error?: { status: number; message: string };
 }> {
-  const tenantId = getTenantIdFromRequest(req);
-
-  if (!tenantId) {
-    return {
-      error: { status: 400, message: 'x-tenant-id header (or tenant_id query in development) is required' },
-    };
-  }
-
   const actorEmail = getActorEmail(req);
 
   if (!actorEmail) {
     return {
       error: { status: 401, message: 'Authenticated user email is required for tenant authorization.' },
+    };
+  }
+
+  const resolvedAccess = await resolveTenantUserAccess(req);
+  const tenantId = resolvedAccess.effectiveTenantId || getTenantIdFromRequest(req);
+
+  if (!tenantId) {
+    return {
+      error: { status: 403, message: 'Tenant access is not assigned for this authenticated user.' },
     };
   }
 

@@ -86,6 +86,53 @@ sequenceDiagram
 | **Admin Mode Support** | Full visibility when tenant header is omitted - perfect for admin dashboards and reporting |
 | **High Performance** | Optimized with indexes and connection pooling - minimal overhead |
 
+## Automatic Tenant Access via `/app/login`
+
+Both platform admins and tenant admins use the default Medusa Admin login page at `/app/login`. There is no separate tenant login page.
+
+After authentication, tenant access is resolved server-side from the authenticated admin identity:
+
+- `PLATFORM_ADMIN_EMAILS` controls who is treated as a `platform_admin`
+- every other authenticated admin defaults to `tenant_admin`
+- if a non-platform admin has no tenant assignment and `AUTO_CREATE_TENANT_ON_FIRST_LOGIN=true`, a tenant is automatically provisioned and reused on later logins
+- non-platform admins are always forced to their assigned tenant (user-provided `x-tenant-id` is ignored)
+- platform admins can optionally activate a tenant context or clear it (admin mode)
+
+### Environment variables
+
+```bash
+PLATFORM_ADMIN_EMAILS=admin@example.com,ops@example.com
+AUTO_CREATE_TENANT_ON_FIRST_LOGIN=true
+ALLOW_LEGACY_TENANT_HEADER=false
+```
+
+- **`PLATFORM_ADMIN_EMAILS`**: comma-separated list of admin emails that get platform-admin privileges.
+- **`AUTO_CREATE_TENANT_ON_FIRST_LOGIN`**: when `true`, non-platform admins without assignment get auto-provisioned tenant access on first authenticated access.
+- **`ALLOW_LEGACY_TENANT_HEADER`**: when `true`, legacy header-based tenant selection (`x-tenant-id`) is allowed as a fallback. Default should remain `false` in production.
+
+### Tenant access admin APIs
+
+- `GET /admin/tenant-access/me` → shows resolved access for current authenticated user
+- `POST /admin/tenant-access/activate` → platform-admin only, set/clear active tenant
+- `POST /admin/tenant-access/assign` → platform-admin only, manually assign a user to a tenant
+- `GET /admin/tenant-access/list` → platform-admin only, list tenant access records
+
+### Security notes
+
+- Tenant context is enforced server-side from authenticated identity for tenant admins.
+- Tenant users cannot escape tenant boundaries by sending arbitrary `x-tenant-id`.
+- Platform admin “admin mode” is only available to emails configured in `PLATFORM_ADMIN_EMAILS`.
+- RLS remains the final enforcement layer at the database level.
+
+### Manual validation checklist
+
+1. Add `admin@example.com` to `PLATFORM_ADMIN_EMAILS`, restart server.
+2. Login to `/app/login` as `admin@example.com`; verify `GET /admin/tenant-access/me` reports `is_platform_admin=true`.
+3. Login as any other admin email; verify `GET /admin/tenant-access/me` reports `role=tenant_admin` with an assigned tenant.
+4. For a newly seen non-platform email, verify tenant assignment is created automatically and remains stable after relogin.
+5. Attempt requests with mismatched `x-tenant-id` for tenant user; verify effective tenant remains assigned tenant.
+6. As platform admin, call `/admin/tenant-access/activate` with a tenant UUID, then with `null`; verify both succeed.
+
 ## Why Row Level Security?
 
 When building multi-tenant SaaS applications, data isolation is critical. Traditional approaches have significant drawbacks:

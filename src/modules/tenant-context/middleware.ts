@@ -4,7 +4,8 @@ import type { Knex } from 'knex';
 
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from '@medusajs/framework';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
-import { getActiveTenantIdFromAuthContext, getActorEmail } from '../../api/admin/_shared/auth-context';
+import { getActorEmail } from '../../api/admin/_shared/auth-context';
+import { isLegacyTenantHeaderEnabled, resolveTenantUserAccess } from '../../api/admin/_shared/tenant-user-access';
 import { isTenantAccessBlocked } from '../tenant-management/lifecycle';
 import { TenantRole } from '../tenant-management/service';
 
@@ -32,6 +33,7 @@ const TENANT_OPTIONAL_ROUTE_PATTERNS: RegExp[] = [
   /^\/store\/apps\/webhooks\//i,
   /^\/admin\/tenants\/?$/i,
   /^\/admin\/tenants\/active\/?$/i,
+  /^\/admin\/tenant-access\//i,
   /^\/admin\/tenants\/invitations\/accept\/?$/i,
   /^\/admin\/auth\//i,
   /^\/auth\//i,
@@ -223,6 +225,32 @@ async function resolveTenantId(req: MedusaRequest): Promise<string | null> {
   return null;
 }
 
+async function resolveEffectiveTenantForAuthenticatedUser(req: MedusaRequest): Promise<string | null> {
+  const access = await resolveTenantUserAccess(req);
+
+  if (!access.actorEmail) {
+    return null;
+  }
+
+  if (access.isPlatformAdmin) {
+    if (access.activeTenantId) {
+      return access.activeTenantId;
+    }
+
+    if (isLegacyTenantHeaderEnabled()) {
+      return resolveTenantId(req);
+    }
+
+    return null;
+  }
+
+  if (!access.assignedTenantId) {
+    throw Object.assign(new Error('Tenant access is not assigned for this account.'), { status: 403 });
+  }
+
+  return access.assignedTenantId;
+}
+
 async function getMembershipForTenant(req: MedusaRequest, tenantId: string, actorEmail: string) {
   const knex = req.scope?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) as Knex | undefined;
 
@@ -240,73 +268,17 @@ async function getMembershipForTenant(req: MedusaRequest, tenantId: string, acto
     .first();
 }
 
-async function enforceAdminTenantSelection(req: MedusaRequest): Promise<string | null> {
-  if (!isAdminPath(req)) {
-    return null;
-  }
-
-  const knex = req.scope?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) as Knex | undefined;
-
-  if (!knex) {
-    return null;
-  }
-
-  const actorEmail = getActorEmail(req);
-
-  if (!actorEmail) {
-    return null;
-  }
-
-  const memberships = await knex('tenant_membership')
-    .join('tenant', 'tenant.tenant_id', 'tenant_membership.tenant_id')
-    .select('tenant_membership.tenant_id', 'tenant_membership.role', 'tenant_membership.status')
-    .where({ 'tenant_membership.user_email': actorEmail, 'tenant_membership.status': 'active', 'tenant.status': 'active' });
-
-  if (!memberships.length) {
-    return null;
-  }
-
-  const headerTenantId = normalizeHeaderValue(req.headers['x-tenant-id'])?.trim();
-  const activeTenantId = getActiveTenantIdFromAuthContext(req);
-  const selectedTenantId = headerTenantId || activeTenantId || (memberships.length === 1 ? memberships[0].tenant_id : null);
-
-  if (!selectedTenantId) {
-    throw Object.assign(new Error('active_tenant_id is required for users belonging to multiple tenants.'), { status: 400 });
-  }
-
-  const selectedMembership = memberships.find((membership) => membership.tenant_id === selectedTenantId);
-
-  if (!selectedMembership) {
-    throw Object.assign(new Error('You are not an active member of the selected tenant.'), { status: 403 });
-  }
-
-  req.headers['x-tenant-id'] = selectedTenantId;
-
-  const authContext = (req as any).auth_context;
-  if (authContext) {
-    authContext.app_metadata = {
-      ...(authContext.app_metadata || {}),
-      active_tenant_id: selectedTenantId,
-      tenant_role: selectedMembership.role,
-    };
-    authContext.user_metadata = {
-      ...(authContext.user_metadata || {}),
-      active_tenant_id: selectedTenantId,
-      tenant_role: selectedMembership.role,
-    };
-  }
-
-  return selectedTenantId;
-}
-
 async function enforceTenantScope(req: MedusaRequest, tenantId: string | null): Promise<void> {
   if ((!isAdminPath(req) && !isStorePath(req)) || isTenantOptionalRoute(req)) {
     return;
   }
 
   if (!tenantId) {
-    if (isAdminPath(req) && isPlatformOperator(req)) {
-      return;
+    if (isAdminPath(req)) {
+      const access = await resolveTenantUserAccess(req);
+      if (access.isPlatformAdmin || isPlatformOperator(req)) {
+        return;
+      }
     }
 
     throw Object.assign(
@@ -337,12 +309,14 @@ async function enforceTenantLifecycleState(req: MedusaRequest, tenantId: string 
 
 export async function tenantContextMiddleware(req: MedusaRequest, _res: MedusaResponse, next: MedusaNextFunction) {
   try {
-    await enforceAdminTenantSelection(req);
-    const tenantId = await resolveTenantId(req);
+    const resolvedFromAccess = await resolveEffectiveTenantForAuthenticatedUser(req);
+    const rawActorEmail = getActorEmail(req);
+    const canUseLegacyHeader = !rawActorEmail || isLegacyTenantHeaderEnabled();
+    const tenantId = resolvedFromAccess || (canUseLegacyHeader ? await resolveTenantId(req) : null);
     await enforceTenantScope(req, tenantId);
     await enforceTenantLifecycleState(req, tenantId);
 
-    const actorEmail = getActorEmail(req) || undefined;
+    const actorEmail = rawActorEmail || undefined;
     let actorTenantRole: TenantRole | undefined;
 
     if (tenantId && actorEmail) {
