@@ -124,6 +124,15 @@ function isPlatformOperator(req: MedusaRequest): boolean {
   }
 
   const operatorHeader = normalizeHeaderValue(req.headers['x-platform-operator']);
+
+  if (!operatorHeader) {
+    return false;
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    return false;
+  }
+
   return isTruthy(operatorHeader);
 }
 
