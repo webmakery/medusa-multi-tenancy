@@ -302,6 +302,12 @@ class BillingModuleService extends MedusaService({
     };
   }
 
+  async getBillingAccountSnapshot(tenantId: string) {
+    const knex = this.getKnex();
+
+    return knex('tenant_billing_account').where({ tenant_id: tenantId }).first();
+  }
+
   async recordAdminBillingAction(input: {
     tenant_id: string;
     actor?: string;
