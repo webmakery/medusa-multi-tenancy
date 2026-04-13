@@ -99,6 +99,22 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       },
     });
 
+    const authIdentity = await authService.retrieveAuthIdentity(authRegistration.authIdentity.id);
+    const existingAppMetadata = (authIdentity?.app_metadata || {}) as Record<string, unknown>;
+
+    await authService.updateAuthIdentities({
+      id: authRegistration.authIdentity.id,
+      app_metadata: {
+        ...existingAppMetadata,
+        platform_operator: false,
+        is_platform_operator: false,
+        is_admin: false,
+        admin: false,
+        active_tenant_id: result.tenant.tenant_id,
+        tenant_role: 'owner',
+      },
+    });
+
     const configModule = req.scope.resolve(ContainerRegistrationKeys.CONFIG_MODULE) as any;
     const jwtSecret = configModule.projectConfig.http.jwtSecret;
     const jwtExpiresIn = configModule.projectConfig.http.jwtExpiresIn;
