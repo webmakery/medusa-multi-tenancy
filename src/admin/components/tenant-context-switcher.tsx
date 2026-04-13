@@ -43,8 +43,10 @@ const TenantContextSwitcher = () => {
 
     try {
       const response = await switchActiveTenant(selectedTenantId);
-      setActiveTenantId(response.active_tenant_id || selectedTenantId);
+      const nextTenantId = response.active_tenant_id || selectedTenantId;
+      setActiveTenantId(nextTenantId);
       setMessage(t('admin.tenantContext.messages.updated'));
+      window.location.reload();
     } catch (err: any) {
       setError(err.message || t('admin.tenantContext.errors.switch'));
     } finally {
