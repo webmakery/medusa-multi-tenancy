@@ -4,6 +4,12 @@ import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from '@medusaj
 import { defineMiddlewares } from '@medusajs/framework/http';
 
 import { getActiveTenantIdFromAuthContext, getActorEmail } from './admin/_shared/auth-context';
+import {
+  buildTenantScopedKey,
+  purgeTenantEntriesFromMap,
+  purgeTenantEntriesFromSet,
+  registerTenantRuntimeInvalidator,
+} from '../modules/tenant-context/runtime-state';
 import { tenantContextMiddleware, tenantContextStorage } from '../modules/tenant-context/middleware';
 
 const CORRELATION_ID_HEADER = 'x-correlation-id';
@@ -132,6 +138,18 @@ const abuseAlertDeduplication = new Set<string>();
 const potentialLeakageDeduplication = new Set<string>();
 const actorTenantPatternWindow = new Map<string, { tenantId: string; updatedAt: number }>();
 const LEAKAGE_PATTERN_WINDOW_MS = 2 * 60 * 1000;
+
+registerTenantRuntimeInvalidator((tenantId: string) => {
+  purgeTenantEntriesFromMap(rateLimitBuckets, tenantId);
+  purgeTenantEntriesFromMap(tenantMutationRateLimitBuckets, tenantId);
+  purgeTenantEntriesFromMap(tenantEndpointClassBuckets, tenantId);
+  purgeTenantEntriesFromMap(tenantEndpointClassQuotaBuckets, tenantId);
+  purgeTenantEntriesFromMap(tenantEndpointClassAbuseBuckets, tenantId);
+  purgeTenantEntriesFromMap(tenantErrorRateBuckets, tenantId);
+  purgeTenantEntriesFromSet(quotaAlertDeduplication, tenantId);
+  purgeTenantEntriesFromSet(abuseAlertDeduplication, tenantId);
+  purgeTenantEntriesFromSet(potentialLeakageDeduplication, tenantId);
+});
 
 function pseudonymize(value: string | undefined | null): string | null {
   if (!value) {
@@ -338,7 +356,7 @@ function tenantIpRateLimitMiddleware(req: MedusaRequest, res: MedusaResponse, ne
 
   const tenantId = tenantContextStorage.getStore()?.tenantId ?? 'system';
   const ip = getClientIp(req);
-  const key = `${tenantId}:${ip}`;
+  const key = buildTenantScopedKey(tenantId, 'ip-rate-limit', ip);
 
   const existingBucket = rateLimitBuckets.get(key);
 
@@ -378,7 +396,7 @@ function tenantMutationRateLimitMiddleware(req: MedusaRequest, res: MedusaRespon
   rateLimitCleanup(now);
 
   const tenantId = getTenantRateLimitIdentity(req);
-  const bucketKey = `${tenantId}:${match.scope}:${req.method.toUpperCase()}`;
+  const bucketKey = buildTenantScopedKey(tenantId, 'mutation-rate-limit', match.scope, req.method.toUpperCase());
   const existingBucket = tenantMutationRateLimitBuckets.get(bucketKey);
 
   if (!existingBucket || existingBucket.resetAt <= now) {
@@ -415,7 +433,7 @@ function tenantEndpointClassRateLimitAndQuotaMiddleware(
   const tenantId = getTenantRateLimitIdentity(req);
   const endpointClass = classifyEndpoint(req);
   const classConfig = getLimitConfig(tenantId, endpointClass);
-  const throttleKey = `${tenantId}:${endpointClass}:throttle`;
+  const throttleKey = buildTenantScopedKey(tenantId, endpointClass, 'throttle');
 
   const throttleBucket = tenantEndpointClassBuckets.get(throttleKey);
   if (!throttleBucket || throttleBucket.resetAt <= now) {
@@ -438,7 +456,7 @@ function tenantEndpointClassRateLimitAndQuotaMiddleware(
     throttleBucket.count += 1;
   }
 
-  const quotaKey = `${tenantId}:${endpointClass}:quota`;
+  const quotaKey = buildTenantScopedKey(tenantId, endpointClass, 'quota');
   const quotaBucket = tenantEndpointClassQuotaBuckets.get(quotaKey);
   let usageCount = 1;
   let quotaResetAt = now + QUOTA_WINDOW_MS;
@@ -457,8 +475,10 @@ function tenantEndpointClassRateLimitAndQuotaMiddleware(
   const alertThreshold = Math.ceil(classConfig.softQuotaPerHour * classConfig.alertThresholdRatio);
   const hardWithOverage = classConfig.hardQuotaPerHour + classConfig.overageGraceRequests;
 
-  if (usageCount >= alertThreshold && !quotaAlertDeduplication.has(`${quotaKey}:alert`)) {
-    quotaAlertDeduplication.add(`${quotaKey}:alert`);
+  const quotaAlertKey = buildTenantScopedKey(tenantId, endpointClass, 'quota', 'alert');
+
+  if (usageCount >= alertThreshold && !quotaAlertDeduplication.has(quotaAlertKey)) {
+    quotaAlertDeduplication.add(quotaAlertKey);
     console.warn(
       JSON.stringify({
         level: 'warn',
@@ -499,7 +519,7 @@ function tenantEndpointClassRateLimitAndQuotaMiddleware(
     });
   }
 
-  const abuseKey = `${tenantId}:${endpointClass}:abuse`;
+  const abuseKey = buildTenantScopedKey(tenantId, endpointClass, 'abuse');
   const abuseBucket = tenantEndpointClassAbuseBuckets.get(abuseKey);
 
   if (!abuseBucket || abuseBucket.resetAt <= now) {
@@ -538,7 +558,7 @@ function structuredErrorLoggingMiddleware(req: MedusaRequest, res: MedusaRespons
     const tenantId = getTenantRateLimitIdentity(req);
     const endpointClass = classifyEndpoint(req);
     const now = Date.now();
-    const errorRateKey = `${tenantId}:${endpointClass}:error-rate`;
+    const errorRateKey = buildTenantScopedKey(tenantId, endpointClass, 'error-rate');
     const errorRateBucket = tenantErrorRateBuckets.get(errorRateKey);
 
     if (!errorRateBucket || errorRateBucket.resetAt <= now) {
@@ -598,7 +618,7 @@ function structuredErrorLoggingMiddleware(req: MedusaRequest, res: MedusaRespons
     );
 
     if (authTenantId && authTenantId !== tenantId) {
-      const authMismatchKey = `${actorHash || 'unknown'}:${tenantId}:${authTenantId}:auth-mismatch`;
+      const authMismatchKey = buildTenantScopedKey(tenantId, 'auth-mismatch', actorHash || 'unknown', authTenantId);
       if (!potentialLeakageDeduplication.has(authMismatchKey)) {
         potentialLeakageDeduplication.add(authMismatchKey);
         console.error(
@@ -619,7 +639,7 @@ function structuredErrorLoggingMiddleware(req: MedusaRequest, res: MedusaRespons
     if (actorHash) {
       const priorPattern = actorTenantPatternWindow.get(actorHash);
       if (priorPattern && priorPattern.tenantId !== tenantId && now - priorPattern.updatedAt <= LEAKAGE_PATTERN_WINDOW_MS) {
-        const crossTenantKey = `${actorHash}:${priorPattern.tenantId}:${tenantId}`;
+        const crossTenantKey = buildTenantScopedKey(tenantId, 'cross-tenant-pattern', actorHash, priorPattern.tenantId);
         if (!potentialLeakageDeduplication.has(crossTenantKey)) {
           potentialLeakageDeduplication.add(crossTenantKey);
           console.warn(

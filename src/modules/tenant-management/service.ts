@@ -8,6 +8,7 @@ import { AUDIT_LOG_MODULE } from '../audit-log';
 import AuditLogModuleService from '../audit-log/service';
 import { BILLING_MODULE } from '../billing';
 import BillingModuleService from '../billing/service';
+import { invalidateTenantRuntimeState } from '../tenant-context/runtime-state';
 import TenantInvitation from './models/tenant-invitation';
 import TenantMembership from './models/tenant-membership';
 import { TENANT_DELETION_RETENTION_DAYS, TenantStatus } from './lifecycle';
@@ -228,6 +229,8 @@ class TenantManagementModuleService extends MedusaService({
       },
     });
 
+    invalidateTenantRuntimeState(invitation.tenant_id);
+
     return {
       tenant_id: invitation.tenant_id,
       email: invitation.email,
@@ -303,6 +306,8 @@ class TenantManagementModuleService extends MedusaService({
       },
     });
 
+    invalidateTenantRuntimeState(input.tenant_id);
+
     return {
       ...member,
       role,
@@ -345,6 +350,8 @@ class TenantManagementModuleService extends MedusaService({
         role: member.role,
       },
     });
+
+    invalidateTenantRuntimeState(input.tenant_id);
 
     return member;
   }
@@ -394,6 +401,8 @@ class TenantManagementModuleService extends MedusaService({
         to_email: targetMembership.user_email,
       },
     });
+
+    invalidateTenantRuntimeState(input.tenant_id);
 
     return {
       previous_owner: actorMembership.user_email,
@@ -449,6 +458,8 @@ class TenantManagementModuleService extends MedusaService({
       },
     });
 
+    invalidateTenantRuntimeState(tenantId);
+
     return {
       ...tenant,
       status: 'inactive',
@@ -482,6 +493,8 @@ class TenantManagementModuleService extends MedusaService({
         billing_preserved: true,
       },
     });
+
+    invalidateTenantRuntimeState(tenantId);
 
     return {
       ...tenant,
@@ -523,6 +536,8 @@ class TenantManagementModuleService extends MedusaService({
       },
     });
 
+    invalidateTenantRuntimeState(tenantId);
+
     return {
       ...tenant,
       status: 'active',
@@ -561,6 +576,8 @@ class TenantManagementModuleService extends MedusaService({
         retention_days: TENANT_DELETION_RETENTION_DAYS,
       },
     });
+
+    invalidateTenantRuntimeState(tenantId);
 
     return {
       ...tenant,

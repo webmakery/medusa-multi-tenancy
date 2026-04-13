@@ -6,11 +6,27 @@ import { APPS_MODULE } from '../../../../../modules/apps';
 import AppsModuleService from '../../../../../modules/apps/service';
 import { AUDIT_LOG_MODULE } from '../../../../../modules/audit-log';
 import AuditLogModuleService from '../../../../../modules/audit-log/service';
+import {
+  buildTenantScopedKey,
+  purgeTenantEntriesFromMap,
+  registerTenantRuntimeInvalidator,
+  TenantScopedDocumentIndex,
+} from '../../../../../modules/tenant-context/runtime-state';
 
 const WEBHOOK_MAX_SKEW_MS = 5 * 60 * 1000;
 const WEBHOOK_NONCE_TTL_MS = 10 * 60 * 1000;
 
 const seenWebhookNonces = new Map<string, number>();
+const webhookAcceptanceIndex = new TenantScopedDocumentIndex<{
+  app_id: string;
+  nonce: string;
+  accepted_at: number;
+}>();
+
+registerTenantRuntimeInvalidator((tenantId: string) => {
+  purgeTenantEntriesFromMap(seenWebhookNonces, tenantId);
+  webhookAcceptanceIndex.invalidateTenant(tenantId);
+});
 
 function normalizeHeaderValue(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) {
@@ -116,13 +132,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   cleanupExpiredNonces(now);
-  const nonceKey = `${appId}:${nonce}`;
-
-  if (seenWebhookNonces.has(nonceKey)) {
-    await auditWebhookFailure(req, appId, 'replayed_nonce');
-    return res.status(409).json({ message: 'Replay detected for nonce.' });
-  }
-
   const appsService: AppsModuleService = req.scope.resolve(APPS_MODULE);
   const webhookContext = await appsService.verifyInboundWebhook(appId, rawBody, signature);
 
@@ -131,7 +140,18 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(401).json({ message: 'Invalid webhook signature.' });
   }
 
+  const nonceKey = buildTenantScopedKey(webhookContext.tenant_id, 'webhook-nonce', appId, nonce);
+  if (seenWebhookNonces.has(nonceKey)) {
+    await auditWebhookFailure(req, appId, 'replayed_nonce', webhookContext.tenant_id);
+    return res.status(409).json({ message: 'Replay detected for nonce.' });
+  }
+
   seenWebhookNonces.set(nonceKey, now + WEBHOOK_NONCE_TTL_MS);
+  webhookAcceptanceIndex.upsert(webhookContext.tenant_id, nonceKey, {
+    app_id: appId,
+    nonce,
+    accepted_at: now,
+  });
 
   res.status(202).json({
     message: 'Webhook accepted.',
@@ -140,3 +160,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     payload: req.body || {},
   });
 }
+
+export const __testUtils = {
+  queryAcceptedWebhooksByTenant(tenantId: string) {
+    return webhookAcceptanceIndex.query(tenantId);
+  },
+};
