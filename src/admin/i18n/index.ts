@@ -206,6 +206,37 @@ const en = {
         load: 'Could not load analytics data.',
       },
     },
+    billing: {
+      menuLabel: 'Billing',
+      title: 'Tenant billing',
+      description: 'Review billing lifecycle state, entitlement limits, and metered usage for this tenant.',
+      unlimited: 'Unlimited',
+      fields: {
+        status: 'Billing status',
+        plan: 'Plan: {{plan}}',
+        trialEnds: 'Trial ends: {{date}}',
+        graceEnds: 'Grace period ends: {{date}}',
+      },
+      actions: {
+        renew: 'Run renewal',
+        failPayment: 'Mark payment failed',
+        recoverPayment: 'Recover payment',
+        expireGrace: 'Refresh grace state',
+      },
+      columns: {
+        feature: 'Feature',
+        meter: 'Meter',
+        limit: 'Limit',
+        used: 'Used this period',
+      },
+      transitions: {
+        title: 'State transitions',
+      },
+      errors: {
+        load: 'Could not load billing overview.',
+        update: 'Could not update billing state.',
+      },
+    },
   },
 };
 
