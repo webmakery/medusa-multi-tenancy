@@ -34,6 +34,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     return res.status(200).json({ member });
   } catch (error: any) {
-    return res.status(404).json({ message: error.message || 'Member not found.' });
+    return res.status(400).json({ message: error.message || 'Unable to update member role.' });
   }
 }

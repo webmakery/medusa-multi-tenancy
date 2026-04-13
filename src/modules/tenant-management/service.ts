@@ -52,6 +52,7 @@ class TenantManagementModuleService extends MedusaService({
   async retrieveTenant(tenantId: string) {
     const knex = this.getKnex();
 
+    // tenant-scope-ignore: tenant lifecycle endpoints retrieve tenants by explicit tenant id.
     return knex('tenant')
       .select(
         'id',
@@ -131,7 +132,8 @@ class TenantManagementModuleService extends MedusaService({
 
     const role = this.normalizeRole(input.role);
     const expiresInDays = input.expires_in_days && input.expires_in_days > 0 ? input.expires_in_days : 7;
-    const token = randomUUID();
+    const tokenNonce = randomUUID();
+    const token = `${input.tenant_id}.${role}.${tokenNonce}`;
 
     const invitation = {
       id: randomUUID(),
@@ -174,6 +176,11 @@ class TenantManagementModuleService extends MedusaService({
 
     if (invitation.status !== 'pending') {
       throw new Error('Invitation is no longer pending.');
+    }
+
+    const expectedTokenPrefix = `${invitation.tenant_id}.${invitation.role}.`;
+    if (!String(invitation.invitation_token).startsWith(expectedTokenPrefix)) {
+      throw new Error('Invitation token is invalid for this tenant or role.');
     }
 
     if (new Date(invitation.expires_at).getTime() < Date.now()) {
@@ -255,6 +262,23 @@ class TenantManagementModuleService extends MedusaService({
       throw new Error('Member not found.');
     }
 
+    if (role === 'owner' && member.role !== 'owner') {
+      throw new Error('Use ownership transfer to assign owner role.');
+    }
+
+    if (member.role === 'owner' && role !== 'owner') {
+      const ownerCountResult = await knex('tenant_membership')
+        .where({ tenant_id: input.tenant_id, status: 'active', role: 'owner' })
+        .count<{ count: string }[]>('* as count')
+        .first();
+
+      const ownerCount = Number(ownerCountResult?.count || 0);
+
+      if (ownerCount <= 1) {
+        throw new Error('Cannot downgrade the last owner. Transfer ownership first.');
+      }
+    }
+
     await knex('tenant_membership')
       .where({ id: member.id })
       .update({ role, updated_at: knex.fn.now() });
@@ -277,6 +301,114 @@ class TenantManagementModuleService extends MedusaService({
     };
   }
 
+  async removeMember(input: { tenant_id: string; member_id: string; actor?: string }) {
+    const knex = this.getKnex();
+
+    const member = await knex('tenant_membership')
+      .where({ id: input.member_id, tenant_id: input.tenant_id })
+      .first();
+
+    if (!member) {
+      throw new Error('Member not found.');
+    }
+
+    if (member.role === 'owner') {
+      const ownerCountResult = await knex('tenant_membership')
+        .where({ tenant_id: input.tenant_id, status: 'active', role: 'owner' })
+        .count<{ count: string }[]>('* as count')
+        .first();
+
+      const ownerCount = Number(ownerCountResult?.count || 0);
+
+      if (ownerCount <= 1) {
+        throw new Error('Cannot remove the last owner. Transfer ownership first.');
+      }
+    }
+
+    await knex('tenant_membership').where({ id: member.id }).del();
+
+    await this.getAuditLogService().recordEvent({
+      actor: input.actor || 'system',
+      tenant_id: input.tenant_id,
+      action: 'member_removed',
+      resource_id: member.id,
+      payload: {
+        user_email: member.user_email,
+        role: member.role,
+      },
+    });
+
+    return member;
+  }
+
+  async transferOwnership(input: { tenant_id: string; actor_email: string; target_member_id: string }) {
+    const knex = this.getKnex();
+    const actorEmail = input.actor_email.trim().toLowerCase();
+
+    const actorMembership = await knex('tenant_membership')
+      .where({ tenant_id: input.tenant_id, user_email: actorEmail, status: 'active' })
+      .first();
+
+    if (!actorMembership || actorMembership.role !== 'owner') {
+      throw new Error('Only an active owner can transfer ownership.');
+    }
+
+    const targetMembership = await knex('tenant_membership')
+      .where({ tenant_id: input.tenant_id, id: input.target_member_id, status: 'active' })
+      .first();
+
+    if (!targetMembership) {
+      throw new Error('Target member not found.');
+    }
+
+    if (targetMembership.id === actorMembership.id) {
+      throw new Error('Choose a different member to transfer ownership.');
+    }
+
+    await knex.transaction(async (trx) => {
+      // tenant-scope-ignore: ownership transfer updates two explicit membership ids in one transaction.
+      await trx('tenant_membership')
+        .where({ id: actorMembership.id })
+        .update({ role: 'admin', updated_at: trx.fn.now() });
+
+      await trx('tenant_membership')
+        .where({ id: targetMembership.id })
+        .update({ role: 'owner', updated_at: trx.fn.now() });
+    });
+
+    await this.getAuditLogService().recordEvent({
+      actor: actorEmail,
+      tenant_id: input.tenant_id,
+      action: 'ownership_transferred',
+      resource_id: targetMembership.id,
+      payload: {
+        from_email: actorMembership.user_email,
+        to_email: targetMembership.user_email,
+      },
+    });
+
+    return {
+      previous_owner: actorMembership.user_email,
+      new_owner: targetMembership.user_email,
+    };
+  }
+
+  async listActiveMembershipsByEmail(userEmail: string) {
+    const knex = this.getKnex();
+    const normalizedEmail = userEmail.trim().toLowerCase();
+
+    // tenant-scope-ignore: tenant switcher needs cross-tenant memberships for a single authenticated actor.
+    return knex('tenant_membership')
+      .join('tenant', 'tenant.tenant_id', 'tenant_membership.tenant_id')
+      .select('tenant_membership.tenant_id', 'tenant_membership.role', 'tenant_membership.status')
+      .where({
+        'tenant_membership.user_email': normalizedEmail,
+        'tenant_membership.status': 'active',
+        'tenant.status': 'active',
+      })
+      .orderBy('tenant_membership.created_at', 'asc');
+  }
+
   async deactivateTenant(tenantId: string, actor?: string) {
     const knex = this.getKnex();
 
@@ -287,6 +419,8 @@ class TenantManagementModuleService extends MedusaService({
       throw new Error('Tenant not found.');
     }
 
+    // tenant-scope-ignore: deletion scheduling applies to the explicitly targeted tenant id.
+    // tenant-scope-ignore: deletion scheduling applies to the explicitly targeted tenant id.
     await knex('tenant').where({ id: tenantId }).update({
       status: 'inactive',
       deactivated_at: knex.fn.now(),
@@ -315,6 +449,7 @@ class TenantManagementModuleService extends MedusaService({
 
   async suspendTenant(tenantId: string, actor?: string) {
     const knex = this.getKnex();
+    // tenant-scope-ignore: admin lifecycle action targets a specific tenant id.
     const tenant = await knex('tenant').where({ id: tenantId }).first();
 
     if (!tenant) {
@@ -348,6 +483,7 @@ class TenantManagementModuleService extends MedusaService({
 
   async reactivateTenant(tenantId: string, actor?: string) {
     const knex = this.getKnex();
+    // tenant-scope-ignore: admin lifecycle action targets a specific tenant id.
     const tenant = await knex('tenant').where({ id: tenantId }).first();
 
     if (!tenant) {
@@ -387,6 +523,7 @@ class TenantManagementModuleService extends MedusaService({
 
   async requestTenantDeletion(tenantId: string, actor?: string) {
     const knex = this.getKnex();
+    // tenant-scope-ignore: admin lifecycle action targets a specific tenant id.
     const tenant = await knex('tenant').where({ id: tenantId }).first();
 
     if (!tenant) {
@@ -397,6 +534,7 @@ class TenantManagementModuleService extends MedusaService({
       throw new Error('Tenant is under legal hold and cannot be scheduled for deletion.');
     }
 
+    // tenant-scope-ignore: deletion scheduling applies to the explicitly targeted tenant id.
     await knex('tenant').where({ id: tenantId }).update({
       status: 'pending_deletion',
       deletion_requested_at: knex.fn.now(),

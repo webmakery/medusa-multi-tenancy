@@ -9,10 +9,16 @@ export interface TeamMember {
   id: string;
   tenant_id: string;
   user_email: string;
-  role: 'owner' | 'admin' | 'staff';
+  role: 'owner' | 'admin' | 'member' | 'viewer';
   status: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface ActiveTenantMembership {
+  tenant_id: string;
+  role: 'owner' | 'admin' | 'member' | 'viewer';
+  status: string;
 }
 
 export interface SalesChannel {
@@ -167,6 +173,22 @@ export async function getTeamMembers() {
     count: response.count,
     members: response.members || response.team_members || [],
   };
+}
+
+interface ActiveTenantResponse {
+  active_tenant_id?: string | null;
+  memberships: ActiveTenantMembership[];
+}
+
+export async function getActiveTenantContext() {
+  return apiRequest<ActiveTenantResponse>('/tenants/active');
+}
+
+export async function switchActiveTenant(tenantId: string) {
+  return apiRequest<ActiveTenantResponse>('/tenants/active', {
+    method: 'POST',
+    body: JSON.stringify({ tenant_id: tenantId }),
+  });
 }
 
 interface SalesChannelsResponse {

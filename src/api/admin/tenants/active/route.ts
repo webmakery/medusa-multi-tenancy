@@ -1,9 +1,9 @@
-import type { Knex } from 'knex';
-
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, generateJwtToken } from '@medusajs/framework/utils';
 
 import { getActiveTenantIdFromAuthContext, getActorEmail } from '../../_shared/auth-context';
+import { TENANT_MANAGEMENT_MODULE } from '../../../../modules/tenant-management';
+import TenantManagementModuleService from '../../../../modules/tenant-management/service';
 
 interface SelectActiveTenantBody {
   tenant_id?: string;
@@ -36,17 +36,8 @@ function getAuthCookieDomain(req: MedusaRequest): string | undefined {
 }
 
 async function listActorMemberships(req: MedusaRequest, actorEmail: string) {
-  const knex = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as Knex;
-
-  return knex('tenant_membership')
-    .join('tenant', 'tenant.tenant_id', 'tenant_membership.tenant_id')
-    .select('tenant_membership.tenant_id', 'tenant_membership.role', 'tenant_membership.status')
-    .where({
-      'tenant_membership.user_email': actorEmail,
-      'tenant_membership.status': 'active',
-      'tenant.status': 'active',
-    })
-    .orderBy('tenant_membership.created_at', 'asc');
+  const tenantManagementService: TenantManagementModuleService = req.scope.resolve(TENANT_MANAGEMENT_MODULE);
+  return tenantManagementService.listActiveMembershipsByEmail(actorEmail);
 }
 
 function issueUpdatedSessionCookie(req: MedusaRequest, res: MedusaResponse, tenantId: string, tenantRole?: string) {
