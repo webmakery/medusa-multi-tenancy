@@ -1,6 +1,6 @@
 # Tenant Observability Runbook
 
-This runbook defines how tenant context is carried into logs, traces, and metrics while minimizing sensitive data exposure, and how to operationalize that data with dashboards, alerts, and SLOs.
+This runbook defines how tenant context is carried into logs, traces, and metrics while minimizing sensitive data exposure, and how to operationalize that data with dashboards, alerts, SLI/SLO policy, and recurring reliability governance.
 
 ## 1) Telemetry contract
 
@@ -15,6 +15,8 @@ The `structuredErrorLoggingMiddleware` now emits `tenant_metric_http_request` on
 - `correlation_id`
 - `trace_id` / `span_id` (when a W3C `traceparent` header is present)
 - `actor_hash` and `ip_hash` pseudonymized fields (never raw actor email or raw IP)
+- `plan_code` and `service_tier` labels for tier-aware reliability reporting
+- `operation` for SLI-specific classification (`login`, `api-request`, `report-generation`, `webhook-delivery`, `background-job`)
 
 Error logs (`api_response`) and abuse/quota logs also include `tenant_id` and `endpoint_class` for per-tenant drilldowns.
 
@@ -25,7 +27,72 @@ Error logs (`api_response`) and abuse/quota logs also include `tenant_id` and `e
 - Use `actor_hash` and `ip_hash` for behavioral correlation.
 - Keep `tenant_id` visible for tenancy-aware investigations and SLA accountability.
 
-## 2) Dashboards
+## 2) Required SLIs
+
+All SLIs must be computed per `tenant_id`, `plan_code`, and `service_tier`.
+
+1. **Login success**
+   - Source: `tenant_metric_http_request`
+   - Selector: `endpoint_class=auth` and `operation=login`
+   - Indicator: successful login ratio = `non-5xx logins / total logins`
+
+2. **API latency**
+   - Source: `tenant_metric_http_request`
+   - Selector: `operation=api-request`
+   - Indicator: `p95(duration_ms)`
+
+3. **Report generation latency**
+   - Source: `tenant_metric_job_report_generation`
+   - Selector: `job_type=report_generation`
+   - Indicator: `p95(duration_ms)` from acceptance to report-ready completion
+
+4. **Webhook delivery success**
+   - Source: `tenant_metric_webhook_delivery`
+   - Selector: terminal statuses (`delivered`, `failed`)
+   - Indicator: `delivered / (delivered + failed)`
+
+5. **Background job completion**
+   - Source: `tenant_metric_background_job`
+   - Selector: terminal statuses (`completed`, `failed`)
+   - Indicator: `completed / (completed + failed)`
+
+## 3) SLOs and error budgets by service tier / plan
+
+Use a rolling 30-day window for all objectives.
+
+| Service tier | Plan codes | Login success SLO (budget) | API latency SLO (budget) | Report generation latency SLO (budget) | Webhook delivery success SLO (budget) | Background job completion SLO (budget) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Starter | `starter` | 99.5% (0.5%) | 95% <= 900ms (5% slower) | 95% <= 120s (5% slower) | 99.0% (1.0%) | 99.0% (1.0%) |
+| Growth | `growth`, `pro` | 99.9% (0.1%) | 95% <= 600ms (5% slower) | 95% <= 60s (5% slower) | 99.5% (0.5%) | 99.5% (0.5%) |
+| Enterprise | `enterprise` | 99.95% (0.05%) | 95% <= 400ms (5% slower) | 95% <= 30s (5% slower) | 99.9% (0.1%) | 99.9% (0.1%) |
+
+## 4) Alert routing tied to error budget burn
+
+Configure multi-window, multi-burn-rate alerting on each tier/SLI pair.
+
+### Fast-burn alerts (critical)
+
+- Burn-rate condition: `burn_rate_1h >= 4` **and** `burn_rate_6h >= 2`
+- Routing:
+  - `reliability-pager`
+  - `oncall-primary`
+- Response target: acknowledge within 15 minutes
+- Escalation: open incident if condition persists 30 minutes or budget remaining <= 30%
+
+### Slow-burn alerts (high)
+
+- Burn-rate condition: `burn_rate_6h >= 1` **and** `burn_rate_3d >= 1`
+- Routing:
+  - `reliability-triage`
+  - `service-owner`
+- Response target: triage within 4 hours
+- Escalation: reliability improvement ticket required if sustained for 24h or budget remaining <= 50%
+
+### Existing security/leakage alerts (unchanged)
+
+Keep the leakage and abuse alert routing from this runbook and the observability spec.
+
+## 5) Dashboards
 
 Build a **Tenant Health** dashboard with these panels.
 
@@ -37,30 +104,32 @@ Suggested queries:
 
 - P50 latency by tenant (`duration_ms`, grouped by `tenant_id`)
 - P95 latency by tenant and `endpoint_class`
-- P99 latency for reporting endpoints (`endpoint_class=reporting`)
+- P95 API latency by tier (`operation=api-request`)
+- P99 report generation latency (`operation=report-generation`)
 
-### B. Per-tenant error rates
+### B. Per-tenant error rates and budget health
 
-Sources: `tenant_metric_http_request`, `tenant_abuse_high_error_rate`, `api_response`
+Sources: `tenant_metric_http_request`, `tenant_metric_webhook_delivery`, `api_response`
 
 Suggested queries:
 
-- Error rate (%) by tenant over 5m/15m (`status_code >= 400` / total)
-- 5xx error rate by tenant
-- Top tenants by absolute errored request volume
+- Login success ratio by service tier
+- Webhook delivery success ratio by tenant
+- Error budget remaining by tier and SLI
 
-### C. Queue lag
+### C. Queue lag and jobs
 
 Source options:
 
 - Existing queue/job telemetry (if available)
-- Fallback: ingest custom `tenant_queue_lag_ms` metric from workers/subscribers
+- Fallback: ingest `tenant_queue_lag_ms`, `tenant_queue_depth`, and `tenant_metric_background_job`
 
 Suggested panels:
 
 - Current lag by tenant and queue name
 - P95 queue lag by tenant
-- Queue depth by tenant (if queue system exports depth)
+- Background job completion ratio by queue
+- Queue depth by tenant
 
 ### D. Usage saturation
 
@@ -72,54 +141,53 @@ Suggested panels:
 - Hard quota approach: `usage_count / hard_quota`
 - Throttle reject counts (`429`) by tenant and endpoint class
 
-## 3) Leakage indicator alerts
+## 6) Weekly reliability review ritual
 
-Configure alerts using these log events:
+Run a standing **Weekly Reliability Review** with action tracking.
 
-1. `tenant_leakage_auth_mismatch`
-   - Trigger: any event in 5 minutes
-   - Meaning: request tenant context did not match tenant embedded in auth context.
+### Cadence and attendees
 
-2. `tenant_leakage_cross_tenant_pattern`
-   - Trigger: >= 3 events for the same `actor_hash` in 10 minutes
-   - Meaning: suspicious rapid cross-tenant switching pattern for one actor identity.
+- Cadence: weekly (30–45 minutes)
+- Required attendees:
+  - SRE on-call
+  - Product engineering owner
+  - Service owner(s)
+  - Support representative
 
-3. `tenant_abuse_high_error_rate`
-   - Trigger: error rate >= 35% with at least 20 requests in the rolling window
-   - Meaning: potential abuse or integration fault that can mask leakage/fuzzing behavior.
+### Agenda
 
-4. `tenant_abuse_sudden_spike`
-   - Trigger: any event, page on-call if repeated
-   - Meaning: sudden anomalous request volume growth for a tenant class.
+1. Review last week's SLI/SLO performance by tier and top impacted tenants.
+2. Review all fast-burn and slow-burn alerts and incident timelines.
+3. Review new and existing error-budget violations.
+4. Decide launch guards or change freezes for services with exhausted budgets.
+5. Confirm owners and due dates for mitigation actions.
 
-## 4) SLOs for core tenant operations
+### Action tracking requirements
 
-Define SLOs with tenant as a required dimension.
+Track follow-up items in `reliability-action-log` (or equivalent system of record).
 
-### Login (`endpoint_class=auth`)
+Required fields for each action item:
 
-- **Availability SLO:** 99.9% successful responses (non-5xx) per rolling 30 days
-- **Latency SLO:** 95% of requests under 400ms
+- owner
+- due date
+- linked service
+- linked tier
+- mitigation type (bug fix, scaling, retry tuning, dependency remediation, etc.)
+- status
 
-### Create/Update operations (`endpoint_class=write-heavy`)
+Policy:
 
-- **Availability SLO:** 99.5% non-5xx per rolling 30 days
-- **Latency SLO:** 95% under 800ms
+- Any service/tier over budget must have an action item created within 1 business day.
+- Open action items are reviewed every weekly meeting until closure.
+- Repeat budget violations for 2 consecutive weeks require director-level review.
 
-### Reporting (`endpoint_class=reporting`)
+## 7) Implementation checklist
 
-- **Availability SLO:** 99.0% non-5xx per rolling 30 days
-- **Latency SLO:** 95% under 2000ms, 99% under 5000ms
-
-### Error budget policy
-
-- Page primary on-call when a tenant burns > 20% of monthly budget in 24h.
-- Trigger incident response when burn rate exceeds 2x for 1h and 6h windows.
-
-## 5) Implementation checklist
-
-- [ ] Confirm ingestion of `tenant_metric_http_request` and leakage events in log pipeline.
-- [ ] Build Tenant Health dashboard with the four required sections.
-- [ ] Wire alerts to incident channel with severity routing.
-- [ ] Add SLO calculators grouped by `tenant_id` and `endpoint_class`.
+- [ ] Confirm ingestion of `tenant_metric_http_request`, `tenant_metric_job_report_generation`, `tenant_metric_webhook_delivery`, and `tenant_metric_background_job`.
+- [ ] Verify all SLI streams include `tenant_id`, `plan_code`, and `service_tier` labels.
+- [ ] Build Tenant Health dashboard with the required sections and budget panels.
+- [ ] Wire fast-burn and slow-burn routing to on-call and reliability channels.
+- [ ] Add SLO calculators grouped by `tenant_id`, `service_tier`, and `sli_id`.
+- [ ] Create and publish the recurring Weekly Reliability Review calendar invite.
+- [ ] Ensure every budget violation has tracked remediation actions with owners and due dates.
 - [ ] Review telemetry payloads quarterly for PII regressions.
