@@ -16,6 +16,8 @@ const PLATFORM_ADMIN_AUTH_METADATA_KEYS = [
   'admin',
 ] as const;
 
+const PUBLIC_AUTH_LOGIN_PATH = '/app/login';
+
 function isTruthy(value: unknown): boolean {
   if (value === true) {
     return true;
@@ -84,4 +86,9 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     memberships,
     redirect_to: redirectTo,
   });
+}
+
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  const queryString = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  return res.redirect(302, `${PUBLIC_AUTH_LOGIN_PATH}${queryString}`);
 }
