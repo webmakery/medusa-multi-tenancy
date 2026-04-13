@@ -21,6 +21,8 @@ Build secure, scalable multi-tenant e-commerce platforms with automatic data iso
 - **High Performance** - Indexed queries with <2ms overhead
 - **100% Test Coverage** - 37+ comprehensive integration tests
 - **Production Ready** - Used in enterprise SaaS applications
+- **Tenant-Scoped Feature Flags** - Progressive tenant rollouts with deterministic canary and blue-green targeting
+- **Release Governance Tooling** - Pre-release quality gates, automated rollback triggers, and DORA metric reporting scripts
 
 ## Use Cases
 

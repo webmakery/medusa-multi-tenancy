@@ -29,7 +29,10 @@
     "migration:backfill:capture": "node ./scripts/backfill-capture-baseline.js",
     "migration:backfill:validate": "node ./scripts/backfill-validate.js",
     "security:validate-controls": "node ./scripts/validate-security-controls.js",
-    "analytics:validate-pipeline": "node ./scripts/validate-analytics-pipeline.js"
+    "analytics:validate-pipeline": "node ./scripts/validate-analytics-pipeline.js",
+    "release:quality-gate": "node ./scripts/release-quality-gate.js",
+    "release:orchestrate": "node ./scripts/release-orchestrator.js",
+    "dora:metrics": "node ./scripts/dora-metrics.js"
   },
   "dependencies": {
     "@medusajs/admin-sdk": "2.13.6",
