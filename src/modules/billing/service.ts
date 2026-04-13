@@ -21,11 +21,11 @@ class BillingModuleService extends MedusaService({
   TenantBillingUsage,
 }) {
   private getKnex(): Knex {
-    return (this as any).__container__.resolve(ContainerRegistrationKeys.PG_CONNECTION) as Knex;
+    return (this as any).__container__[ContainerRegistrationKeys.PG_CONNECTION] as Knex;
   }
 
   private getAuditLogService(): AuditLogModuleService {
-    return (this as any).__container__.resolve(AUDIT_LOG_MODULE) as AuditLogModuleService;
+    return (this as any).__container__[AUDIT_LOG_MODULE] as AuditLogModuleService;
   }
 
   private computePeriodStart(date = new Date()) {

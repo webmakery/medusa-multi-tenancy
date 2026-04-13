@@ -49,7 +49,7 @@ class TenantManagementModuleService extends MedusaService({
   TenantInvitation,
 }) {
   private getKnex(): Knex {
-    return (this as any).__container__.resolve(ContainerRegistrationKeys.PG_CONNECTION) as Knex;
+    return (this as any).__container__[ContainerRegistrationKeys.PG_CONNECTION] as Knex;
   }
 
   private normalizeRole(role?: string): TenantRole {
@@ -67,11 +67,11 @@ class TenantManagementModuleService extends MedusaService({
   }
 
   private getAuditLogService(): AuditLogModuleService {
-    return (this as any).__container__.resolve(AUDIT_LOG_MODULE) as AuditLogModuleService;
+    return (this as any).__container__[AUDIT_LOG_MODULE] as AuditLogModuleService;
   }
 
   private getBillingService(): BillingModuleService {
-    return (this as any).__container__.resolve(BILLING_MODULE) as BillingModuleService;
+    return (this as any).__container__[BILLING_MODULE] as BillingModuleService;
   }
 
   async listTenants() {
