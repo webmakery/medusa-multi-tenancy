@@ -15,6 +15,33 @@ import { TENANT_DELETION_RETENTION_DAYS, TenantStatus } from './lifecycle';
 
 export type TenantRole = 'owner' | 'admin' | 'member' | 'viewer';
 
+
+export interface TenantSessionPolicyInput {
+  max_session_duration_minutes?: number;
+  mfa_enforced?: boolean;
+  ip_allowlist?: string[];
+}
+
+export interface TenantIdentityProviderInput {
+  protocol: 'saml' | 'oidc';
+  provider_name: string;
+  sign_in_url?: string | null;
+  issuer?: string | null;
+  metadata_url?: string | null;
+  client_id?: string | null;
+  domain_hint?: string | null;
+  x509_certificate?: string | null;
+  scim_enabled?: boolean;
+  scim_base_url?: string | null;
+  scim_auth_mode?: 'bearer_token' | 'oauth2_client_credentials' | null;
+}
+
+export interface TenantAccessConfigurationInput {
+  sso_required_for_admins?: boolean;
+  identity_providers?: TenantIdentityProviderInput[];
+  session_policy?: TenantSessionPolicyInput;
+}
+
 const ALLOWED_ROLES: TenantRole[] = ['owner', 'admin', 'member', 'viewer'];
 
 class TenantManagementModuleService extends MedusaService({
@@ -584,6 +611,110 @@ class TenantManagementModuleService extends MedusaService({
       status: 'pending_deletion',
     };
   }
+
+  async getTenantAccessConfiguration(tenantId: string) {
+    const tenant = await this.retrieveTenant(tenantId);
+
+    if (!tenant) {
+      throw new Error('Tenant not found.');
+    }
+
+    const existingSettings = (tenant.settings_json && typeof tenant.settings_json === 'object' ? tenant.settings_json : {}) as Record<string, any>;
+    const accessControl = (existingSettings.access_control && typeof existingSettings.access_control === 'object'
+      ? existingSettings.access_control
+      : {}) as Record<string, any>;
+
+    return {
+      sso_required_for_admins: accessControl.sso_required_for_admins ?? false,
+      identity_providers: Array.isArray(accessControl.identity_providers) ? accessControl.identity_providers : [],
+      session_policy: {
+        max_session_duration_minutes: accessControl.session_policy?.max_session_duration_minutes ?? 480,
+        mfa_enforced: accessControl.session_policy?.mfa_enforced ?? false,
+        ip_allowlist: Array.isArray(accessControl.session_policy?.ip_allowlist)
+          ? accessControl.session_policy.ip_allowlist
+          : [],
+      },
+      updated_at: accessControl.updated_at || tenant.updated_at,
+    };
+  }
+
+  async updateTenantAccessConfiguration(input: {
+    tenant_id: string;
+    actor?: string;
+    config: TenantAccessConfigurationInput;
+  }) {
+    const knex = this.getKnex();
+    const tenant = await this.retrieveTenant(input.tenant_id);
+
+    if (!tenant) {
+      throw new Error('Tenant not found.');
+    }
+
+    const sessionDuration = input.config.session_policy?.max_session_duration_minutes;
+
+    if (sessionDuration !== undefined && (sessionDuration < 15 || sessionDuration > 43200)) {
+      throw new Error('max_session_duration_minutes must be between 15 and 43200.');
+    }
+
+    const normalizedIpAllowlist = Array.from(
+      new Set((input.config.session_policy?.ip_allowlist || []).map((entry) => String(entry).trim()).filter(Boolean))
+    );
+
+    const normalizedIdentityProviders = (input.config.identity_providers || []).map((provider) => ({
+      protocol: provider.protocol,
+      provider_name: provider.provider_name.trim(),
+      sign_in_url: provider.sign_in_url?.trim() || null,
+      issuer: provider.issuer?.trim() || null,
+      metadata_url: provider.metadata_url?.trim() || null,
+      client_id: provider.client_id?.trim() || null,
+      domain_hint: provider.domain_hint?.trim() || null,
+      x509_certificate: provider.x509_certificate?.trim() || null,
+      scim_enabled: provider.scim_enabled ?? false,
+      scim_base_url: provider.scim_base_url?.trim() || null,
+      scim_auth_mode: provider.scim_auth_mode || null,
+    }));
+
+    const existingSettings = (tenant.settings_json && typeof tenant.settings_json === 'object' ? tenant.settings_json : {}) as Record<string, any>;
+
+    const accessControl = {
+      sso_required_for_admins: input.config.sso_required_for_admins ?? false,
+      identity_providers: normalizedIdentityProviders,
+      session_policy: {
+        max_session_duration_minutes: sessionDuration ?? 480,
+        mfa_enforced: input.config.session_policy?.mfa_enforced ?? false,
+        ip_allowlist: normalizedIpAllowlist,
+      },
+      updated_at: new Date().toISOString(),
+    };
+
+    const mergedSettings = {
+      ...existingSettings,
+      access_control: accessControl,
+    };
+
+    await knex('tenant').where({ tenant_id: input.tenant_id }).update({
+      settings_json: mergedSettings,
+      updated_at: knex.fn.now(),
+    });
+
+    await this.getAuditLogService().recordEvent({
+      actor: input.actor || 'system',
+      tenant_id: input.tenant_id,
+      action: 'tenant_access_policy_updated',
+      resource_id: input.tenant_id,
+      payload: {
+        sso_required_for_admins: accessControl.sso_required_for_admins,
+        idp_count: normalizedIdentityProviders.length,
+        scim_enabled_provider_count: normalizedIdentityProviders.filter((provider) => provider.scim_enabled).length,
+        mfa_enforced: accessControl.session_policy.mfa_enforced,
+        max_session_duration_minutes: accessControl.session_policy.max_session_duration_minutes,
+        ip_allowlist_count: accessControl.session_policy.ip_allowlist.length,
+      },
+    });
+
+    return accessControl;
+  }
+
 }
 
 export default TenantManagementModuleService;
