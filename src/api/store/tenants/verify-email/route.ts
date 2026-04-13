@@ -178,6 +178,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return res.status(200).json({
       status: 'verified',
       tenant: result.tenant,
+      token,
+      token_storage_key: 'medusa_auth_token',
+      auth: {
+        token,
+        storage_key: 'medusa_auth_token',
+      },
       next_step: 'setup_wizard',
       checklist: [
         { key: 'signup_submitted', label: 'Sign up', is_completed: true },
