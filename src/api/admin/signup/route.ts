@@ -1,1 +1,1 @@
-export { GET, POST } from '../../app/signup/route';
+export { POST } from '../../signup/route';
