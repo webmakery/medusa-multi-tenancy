@@ -8,6 +8,7 @@ import { AUDIT_LOG_MODULE } from '../audit-log';
 import AuditLogModuleService from '../audit-log/service';
 import TenantInvitation from './models/tenant-invitation';
 import TenantMembership from './models/tenant-membership';
+import { TENANT_DELETION_RETENTION_DAYS, TenantStatus } from './lifecycle';
 
 export type TenantRole = 'owner' | 'admin' | 'member' | 'viewer';
 
@@ -44,7 +45,7 @@ class TenantManagementModuleService extends MedusaService({
 
     // tenant-scope-ignore: tenant directory endpoint is intentionally cross-tenant for authorized admins.
     return knex('tenant')
-      .select('id', 'tenant_id', 'name', 'slug', 'owner_email', 'status', 'created_at')
+      .select('id', 'tenant_id', 'name', 'slug', 'owner_email', 'status', 'deletion_requested_at', 'scheduled_purge_at', 'created_at')
       .orderBy('created_at', 'desc');
   }
 
@@ -52,9 +53,28 @@ class TenantManagementModuleService extends MedusaService({
     const knex = this.getKnex();
 
     return knex('tenant')
-      .select('id', 'tenant_id', 'name', 'slug', 'owner_email', 'status', 'created_at', 'updated_at')
+      .select(
+        'id',
+        'tenant_id',
+        'name',
+        'slug',
+        'owner_email',
+        'status',
+        'settings_json',
+        'deletion_requested_at',
+        'scheduled_purge_at',
+        'deleted_at',
+        'created_at',
+        'updated_at'
+      )
       .where({ tenant_id: tenantId })
       .first();
+  }
+
+  async getTenantStatus(tenantId: string): Promise<TenantStatus | null> {
+    const knex = this.getKnex();
+    const tenant = await knex('tenant').select('status').where({ tenant_id: tenantId }).first();
+    return (tenant?.status || null) as TenantStatus | null;
   }
 
   async createTenant(input: { name: string; slug: string; owner_email: string }) {
@@ -76,6 +96,15 @@ class TenantManagementModuleService extends MedusaService({
       slug: input.slug,
       owner_email: input.owner_email,
       status: 'active',
+      settings_json: {
+        locale: 'en-US',
+        timezone: 'UTC',
+        currency_code: 'usd',
+        lifecycle: {
+          billing_mode: 'preserve_on_suspension',
+          retention_days: TENANT_DELETION_RETENTION_DAYS,
+        },
+      },
     };
 
     await knex('tenant').insert(tenant);
@@ -258,7 +287,11 @@ class TenantManagementModuleService extends MedusaService({
       throw new Error('Tenant not found.');
     }
 
-    await knex('tenant').where({ id: tenantId }).update({ status: 'inactive', updated_at: knex.fn.now() });
+    await knex('tenant').where({ id: tenantId }).update({
+      status: 'inactive',
+      deactivated_at: knex.fn.now(),
+      updated_at: knex.fn.now(),
+    });
     await knex('tenant_membership')
       .where({ tenant_id: tenantId })
       .update({ status: 'inactive', updated_at: knex.fn.now() });
@@ -277,6 +310,115 @@ class TenantManagementModuleService extends MedusaService({
     return {
       ...tenant,
       status: 'inactive',
+    };
+  }
+
+  async suspendTenant(tenantId: string, actor?: string) {
+    const knex = this.getKnex();
+    const tenant = await knex('tenant').where({ id: tenantId }).first();
+
+    if (!tenant) {
+      throw new Error('Tenant not found.');
+    }
+
+    await knex('tenant').where({ id: tenantId }).update({
+      status: 'suspended',
+      suspended_at: knex.fn.now(),
+      updated_at: knex.fn.now(),
+    });
+
+    await this.getAuditLogService().recordEvent({
+      actor: actor || 'system',
+      tenant_id: tenantId,
+      action: 'tenant_suspended',
+      resource_id: tenantId,
+      payload: {
+        previous_status: tenant.status,
+        new_status: 'suspended',
+        access_blocked: true,
+        billing_preserved: true,
+      },
+    });
+
+    return {
+      ...tenant,
+      status: 'suspended',
+    };
+  }
+
+  async reactivateTenant(tenantId: string, actor?: string) {
+    const knex = this.getKnex();
+    const tenant = await knex('tenant').where({ id: tenantId }).first();
+
+    if (!tenant) {
+      throw new Error('Tenant not found.');
+    }
+
+    if (tenant.status === 'pending_deletion' || tenant.status === 'deleted') {
+      throw new Error('Tenant cannot be reactivated while deletion is in progress.');
+    }
+
+    await knex('tenant').where({ id: tenantId }).update({
+      status: 'active',
+      updated_at: knex.fn.now(),
+    });
+
+    await knex('tenant_membership').where({ tenant_id: tenantId }).update({
+      status: 'active',
+      updated_at: knex.fn.now(),
+    });
+
+    await this.getAuditLogService().recordEvent({
+      actor: actor || 'system',
+      tenant_id: tenantId,
+      action: 'tenant_reactivated',
+      resource_id: tenantId,
+      payload: {
+        previous_status: tenant.status,
+        new_status: 'active',
+      },
+    });
+
+    return {
+      ...tenant,
+      status: 'active',
+    };
+  }
+
+  async requestTenantDeletion(tenantId: string, actor?: string) {
+    const knex = this.getKnex();
+    const tenant = await knex('tenant').where({ id: tenantId }).first();
+
+    if (!tenant) {
+      throw new Error('Tenant not found.');
+    }
+
+    if (tenant.legal_hold === true) {
+      throw new Error('Tenant is under legal hold and cannot be scheduled for deletion.');
+    }
+
+    await knex('tenant').where({ id: tenantId }).update({
+      status: 'pending_deletion',
+      deletion_requested_at: knex.fn.now(),
+      scheduled_purge_at: knex.raw(`NOW() + INTERVAL '${TENANT_DELETION_RETENTION_DAYS} days'`),
+      updated_at: knex.fn.now(),
+    });
+
+    await this.getAuditLogService().recordEvent({
+      actor: actor || 'system',
+      tenant_id: tenantId,
+      action: 'tenant_deletion_requested',
+      resource_id: tenantId,
+      payload: {
+        previous_status: tenant.status,
+        new_status: 'pending_deletion',
+        retention_days: TENANT_DELETION_RETENTION_DAYS,
+      },
+    });
+
+    return {
+      ...tenant,
+      status: 'pending_deletion',
     };
   }
 }

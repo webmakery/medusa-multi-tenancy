@@ -59,10 +59,12 @@ class AnalyticsModuleService extends MedusaService({
 
     // tenant-scope-ignore: background rollup worker intentionally processes pending rows across all tenants.
     const pending = await knex('analytics_event')
-      .select('tenant_id', 'event_date')
+      .join('tenant', 'tenant.tenant_id', 'analytics_event.tenant_id')
+      .select('analytics_event.tenant_id', 'analytics_event.event_date')
       .whereNull('processed_at')
-      .groupBy('tenant_id', 'event_date')
-      .orderBy('event_date', 'asc')
+      .andWhere('tenant.status', 'active')
+      .groupBy('analytics_event.tenant_id', 'analytics_event.event_date')
+      .orderBy('analytics_event.event_date', 'asc')
       .limit(100);
 
     for (const row of pending) {
@@ -160,7 +162,7 @@ class AnalyticsModuleService extends MedusaService({
 
       await trx('analytics_event')
         .where({ tenant_id: tenantId, event_date: eventDate })
-        .andWhereNull('processed_at')
+        .whereNull('processed_at')
         .update({ processed_at: trx.fn.now(), updated_at: trx.fn.now() });
     });
   }

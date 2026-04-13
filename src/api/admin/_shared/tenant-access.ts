@@ -3,6 +3,7 @@ import { MedusaRequest } from '@medusajs/framework/http';
 import { getTenantIdFromRequest } from '../../utils/tenant';
 import { TENANT_MANAGEMENT_MODULE } from '../../../modules/tenant-management';
 import TenantManagementModuleService, { TenantRole } from '../../../modules/tenant-management/service';
+import { isTenantAccessBlocked } from '../../../modules/tenant-management/lifecycle';
 import { getActorEmail, getTenantRoleFromAuthContext } from './auth-context';
 
 export async function resolveAuthenticatedTenantAccess(req: MedusaRequest): Promise<{
@@ -36,6 +37,17 @@ export async function resolveAuthenticatedTenantAccess(req: MedusaRequest): Prom
   if (!membership || membership.status !== 'active') {
     return {
       error: { status: 403, message: 'You are not an active member of this tenant.' },
+    };
+  }
+
+  const tenantStatus = await tenantManagementService.getTenantStatus(tenantId);
+
+  if (isTenantAccessBlocked(tenantStatus)) {
+    return {
+      error: {
+        status: 423,
+        message: `Tenant access is blocked while status is "${tenantStatus || 'unknown'}".`,
+      },
     };
   }
 

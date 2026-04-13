@@ -5,6 +5,7 @@ import type { Knex } from 'knex';
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from '@medusajs/framework';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { getActiveTenantIdFromAuthContext, getActorEmail } from '../../api/admin/_shared/auth-context';
+import { isTenantAccessBlocked } from '../tenant-management/lifecycle';
 import { TenantRole } from '../tenant-management/service';
 
 /**
@@ -34,6 +35,9 @@ const TENANT_OPTIONAL_ROUTE_PATTERNS: RegExp[] = [
   /^\/admin\/tenants\/invitations\/accept\/?$/i,
   /^\/admin\/auth\//i,
   /^\/auth\//i,
+];
+const TENANT_LIFECYCLE_OVERRIDE_ROUTE_PATTERNS: RegExp[] = [
+  /^\/admin\/tenants\/[^/]+\/reactivate\/?$/i,
 ];
 
 function normalizeHeaderValue(value: string | string[] | undefined): string | undefined {
@@ -81,6 +85,11 @@ function isStorePath(req: MedusaRequest): boolean {
 function isTenantOptionalRoute(req: MedusaRequest): boolean {
   const pathname = getPathname(req);
   return TENANT_OPTIONAL_ROUTE_PATTERNS.some((pattern) => pattern.test(pathname));
+}
+
+function allowsLifecycleOverride(req: MedusaRequest): boolean {
+  const pathname = getPathname(req);
+  return TENANT_LIFECYCLE_OVERRIDE_ROUTE_PATTERNS.some((pattern) => pattern.test(pathname));
 }
 
 function hasBasicApiKeyAuth(req: MedusaRequest): boolean {
@@ -249,8 +258,9 @@ async function enforceAdminTenantSelection(req: MedusaRequest): Promise<string |
   }
 
   const memberships = await knex('tenant_membership')
-    .select('tenant_id', 'role', 'status')
-    .where({ user_email: actorEmail, status: 'active' });
+    .join('tenant', 'tenant.tenant_id', 'tenant_membership.tenant_id')
+    .select('tenant_membership.tenant_id', 'tenant_membership.role', 'tenant_membership.status')
+    .where({ 'tenant_membership.user_email': actorEmail, 'tenant_membership.status': 'active', 'tenant.status': 'active' });
 
   if (!memberships.length) {
     return null;
@@ -306,11 +316,31 @@ async function enforceTenantScope(req: MedusaRequest, tenantId: string | null): 
   }
 }
 
+async function enforceTenantLifecycleState(req: MedusaRequest, tenantId: string | null): Promise<void> {
+  if (!tenantId || isTenantOptionalRoute(req) || allowsLifecycleOverride(req)) {
+    return;
+  }
+
+  const knex = req.scope?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) as Knex | undefined;
+
+  if (!knex) {
+    return;
+  }
+
+  const tenant = await knex('tenant').select('status').where({ tenant_id: tenantId }).first();
+  if (isTenantAccessBlocked(tenant?.status)) {
+    throw Object.assign(new Error(`Tenant access is blocked while status is "${tenant?.status || 'unknown'}".`), {
+      status: 423,
+    });
+  }
+}
+
 export async function tenantContextMiddleware(req: MedusaRequest, _res: MedusaResponse, next: MedusaNextFunction) {
   try {
     await enforceAdminTenantSelection(req);
     const tenantId = await resolveTenantId(req);
     await enforceTenantScope(req, tenantId);
+    await enforceTenantLifecycleState(req, tenantId);
 
     const actorEmail = getActorEmail(req) || undefined;
     let actorTenantRole: TenantRole | undefined;

@@ -39,12 +39,14 @@ async function listActorMemberships(req: MedusaRequest, actorEmail: string) {
   const knex = req.scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as Knex;
 
   return knex('tenant_membership')
-    .select('tenant_id', 'role', 'status')
+    .join('tenant', 'tenant.tenant_id', 'tenant_membership.tenant_id')
+    .select('tenant_membership.tenant_id', 'tenant_membership.role', 'tenant_membership.status')
     .where({
-      user_email: actorEmail,
-      status: 'active',
+      'tenant_membership.user_email': actorEmail,
+      'tenant_membership.status': 'active',
+      'tenant.status': 'active',
     })
-    .orderBy('created_at', 'asc');
+    .orderBy('tenant_membership.created_at', 'asc');
 }
 
 function issueUpdatedSessionCookie(req: MedusaRequest, res: MedusaResponse, tenantId: string, tenantRole?: string) {
