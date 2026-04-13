@@ -226,7 +226,8 @@ const OnboardingStatusPage = () => {
 };
 
 export const config = defineRouteConfig({
-  label: 'Onboarding',
+  label: 'Overview',
+  rank: 10,
 });
 
 export default OnboardingStatusPage;

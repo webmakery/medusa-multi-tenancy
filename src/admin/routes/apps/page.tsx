@@ -315,7 +315,8 @@ const AppsPage = () => {
 };
 
 export const config = defineRouteConfig({
-  label: 'Apps',
+  label: 'Integrations',
+  rank: 60,
 });
 
 export default AppsPage;

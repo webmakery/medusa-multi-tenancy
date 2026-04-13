@@ -171,7 +171,8 @@ const AnalyticsPage = () => {
 };
 
 export const config = defineRouteConfig({
-  label: 'Analytics',
+  label: 'Activity',
+  rank: 50,
 });
 
 export default AnalyticsPage;
