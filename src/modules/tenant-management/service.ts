@@ -444,7 +444,12 @@ class TenantManagementModuleService extends MedusaService({
     // tenant-scope-ignore: tenant switcher needs cross-tenant memberships for a single authenticated actor.
     return knex('tenant_membership')
       .join('tenant', 'tenant.tenant_id', 'tenant_membership.tenant_id')
-      .select('tenant_membership.tenant_id', 'tenant_membership.role', 'tenant_membership.status')
+      .select(
+        'tenant_membership.tenant_id',
+        'tenant_membership.role',
+        'tenant_membership.status',
+        'tenant.slug as tenant_slug'
+      )
       .where({
         'tenant_membership.user_email': normalizedEmail,
         'tenant_membership.status': 'active',

@@ -17,6 +17,7 @@ export interface TeamMember {
 
 export interface ActiveTenantMembership {
   tenant_id: string;
+  tenant_slug?: string;
   role: 'owner' | 'admin' | 'member' | 'viewer';
   status: string;
 }
