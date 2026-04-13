@@ -250,6 +250,24 @@ const en = {
         load: 'Could not load analytics data.',
       },
     },
+
+    tenantAuth: {
+      fields: {
+        name: 'Full name',
+        email: 'Email',
+        password: 'Password',
+      },
+      login: {
+        title: 'Tenant login',
+        description: 'Sign in to manage your tenant workspace.',
+        action: 'Sign in',
+      },
+      register: {
+        title: 'Tenant registration',
+        description: 'Create your tenant account to begin setup.',
+        action: 'Create account',
+      },
+    },
     billing: {
       menuLabel: 'Billing',
       title: 'Tenant billing',
