@@ -19,7 +19,7 @@ class AuditLogModuleService extends MedusaService({
   AuditLogEntry,
 }) {
   private getKnex(): Knex {
-    return (this as any).__container__.resolve(ContainerRegistrationKeys.PG_CONNECTION) as Knex;
+    return (this as any).__container__[ContainerRegistrationKeys.PG_CONNECTION] as Knex;
   }
 
   async recordEvent(input: RecordAuditEventInput) {
