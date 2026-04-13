@@ -132,7 +132,7 @@ const TenantSelfRegistrationLoginWidget = () => {
         localStorage.setItem(storageKey, token);
       }
 
-      window.location.assign('/app');
+      window.location.assign('/app/onboarding-status');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to create workspace.');
     } finally {

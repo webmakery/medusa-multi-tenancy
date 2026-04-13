@@ -1,7 +1,10 @@
 import { randomUUID } from 'crypto';
 
+import type { Knex } from 'knex';
+
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { defineMiddlewares } from '@medusajs/framework/http';
+import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 
 import { getActiveTenantIdFromAuthContext, getActorEmail } from './admin/_shared/auth-context';
 import {
@@ -19,6 +22,41 @@ const MUTATION_RATE_LIMIT_WINDOW_MS = 60_000;
 const QUOTA_WINDOW_MS = 60 * 60 * 1000;
 const ABUSE_WINDOW_MS = 60_000;
 const ABUSE_ERROR_WINDOW_MS = 5 * 60 * 1000;
+const PLATFORM_OPERATOR_AUTH_METADATA_KEYS = ['platform_operator', 'is_platform_operator', 'is_admin', 'admin'] as const;
+
+const TENANT_SAFE_APP_ROUTE_PATTERNS: RegExp[] = [
+  /^\/app\/login\/?$/i,
+  /^\/app\/invite\/?$/i,
+  /^\/app\/reset-password\/?$/i,
+  /^\/app\/analytics\/?$/i,
+  /^\/app\/apps\/?$/i,
+  /^\/app\/billing\/?$/i,
+  /^\/app\/onboarding-status\/?$/i,
+  /^\/app\/order-operations\/?$/i,
+  /^\/app\/sales-channels\/?$/i,
+  /^\/app\/store-settings\/?$/i,
+  /^\/app\/team-members\/?$/i,
+];
+
+const TENANT_SAFE_ADMIN_ROUTE_PATTERNS: RegExp[] = [
+  /^\/admin\/auth\//i,
+  /^\/admin\/analytics\//i,
+  /^\/admin\/apps\//i,
+  /^\/admin\/billing\/status\/?$/i,
+  /^\/admin\/collections\/batch\/?$/i,
+  /^\/admin\/inventory\/batch\/?$/i,
+  /^\/admin\/onboarding-checklist\/?$/i,
+  /^\/admin\/orders\//i,
+  /^\/admin\/payments\/?$/i,
+  /^\/admin\/products\/batch\/?$/i,
+  /^\/admin\/sales-channels\//i,
+  /^\/admin\/settings\/store\/?$/i,
+  /^\/admin\/team-members\/?$/i,
+  /^\/admin\/tenants\/active\/?$/i,
+  /^\/admin\/tenants\/invitations\/accept\/?$/i,
+  /^\/admin\/tenants\/[^/]+\//i,
+  /^\/admin\/themes\//i,
+];
 
 type EndpointClass = 'auth' | 'write-heavy' | 'reporting' | 'api-exports';
 
@@ -198,6 +236,121 @@ function normalizeHeaderValue(value: string | string[] | undefined): string | un
   }
 
   return value;
+}
+
+function isTruthy(value: unknown): boolean {
+  if (value === true) {
+    return true;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 'yes';
+  }
+
+  return false;
+}
+
+function hasBasicApiKeyAuth(req: MedusaRequest): boolean {
+  const authorization = normalizeHeaderValue(req.headers.authorization)?.trim();
+  return Boolean(authorization && authorization.toLowerCase().startsWith('basic '));
+}
+
+function isPlatformOperator(req: MedusaRequest): boolean {
+  if (hasBasicApiKeyAuth(req)) {
+    return true;
+  }
+
+  const authContext = (req as any).auth_context;
+
+  for (const key of PLATFORM_OPERATOR_AUTH_METADATA_KEYS) {
+    if (isTruthy(authContext?.app_metadata?.[key]) || isTruthy(authContext?.auth_identity?.app_metadata?.[key])) {
+      return true;
+    }
+  }
+
+  const operatorHeader = normalizeHeaderValue(req.headers['x-platform-operator']);
+  return isTruthy(operatorHeader);
+}
+
+function getPathname(req: MedusaRequest): string {
+  return (req.path || req.originalUrl || '').split('?')[0] || '/';
+}
+
+function isHtmlRequest(req: MedusaRequest): boolean {
+  const accept = normalizeHeaderValue(req.headers.accept)?.toLowerCase() || '';
+  const fetchDest = normalizeHeaderValue(req.headers['sec-fetch-dest'])?.toLowerCase() || '';
+
+  return accept.includes('text/html') || fetchDest === 'document';
+}
+
+function isAppStaticAssetRequest(pathname: string): boolean {
+  if (!pathname.startsWith('/app/')) {
+    return false;
+  }
+
+  return /\.[a-z0-9]+$/i.test(pathname);
+}
+
+function isTenantSafeAppPath(pathname: string): boolean {
+  return TENANT_SAFE_APP_ROUTE_PATTERNS.some((pattern) => pattern.test(pathname));
+}
+
+function isTenantSafeAdminPath(pathname: string): boolean {
+  return TENANT_SAFE_ADMIN_ROUTE_PATTERNS.some((pattern) => pattern.test(pathname));
+}
+
+async function hasActiveTenantMembership(req: MedusaRequest, email: string): Promise<boolean> {
+  const knex = req.scope?.resolve?.(ContainerRegistrationKeys.PG_CONNECTION) as Knex | undefined;
+
+  if (!knex) {
+    return false;
+  }
+
+  const membership = await knex('tenant_membership')
+    .select('id')
+    .where({ user_email: email, status: 'active' })
+    .first();
+
+  return Boolean(membership?.id);
+}
+
+async function tenantAdminSurfaceContainmentMiddleware(req: MedusaRequest, res: MedusaResponse, next: MedusaNextFunction) {
+  const actorEmail = getActorEmail(req);
+
+  if (!actorEmail || isPlatformOperator(req)) {
+    return next();
+  }
+
+  const isTenantDashboardUser = await hasActiveTenantMembership(req, actorEmail);
+
+  if (!isTenantDashboardUser) {
+    return next();
+  }
+
+  const pathname = getPathname(req);
+
+  if (pathname === '/app' || pathname.startsWith('/app/')) {
+    if (!isHtmlRequest(req) || isAppStaticAssetRequest(pathname)) {
+      return next();
+    }
+
+    if (!isTenantSafeAppPath(pathname)) {
+      return res.redirect(302, '/app/onboarding-status');
+    }
+
+    return next();
+  }
+
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    if (!isTenantSafeAdminPath(pathname)) {
+      return res.status(403).json({
+        message: 'Access denied: this admin route is restricted to platform operators.',
+      });
+    }
+  }
+
+  return next();
 }
 
 function parseTraceParent(traceParentHeader: string | undefined): { trace_id?: string; span_id?: string } {
@@ -691,6 +844,7 @@ export default defineMiddlewares({
       middlewares: [
         requestCorrelationIdMiddleware,
         tenantContextMiddleware,
+        tenantAdminSurfaceContainmentMiddleware,
         tenantIpRateLimitMiddleware,
         tenantMutationRateLimitMiddleware,
         tenantEndpointClassRateLimitAndQuotaMiddleware,
@@ -702,6 +856,7 @@ export default defineMiddlewares({
       middlewares: [
         requestCorrelationIdMiddleware,
         tenantContextMiddleware,
+        tenantAdminSurfaceContainmentMiddleware,
         tenantIpRateLimitMiddleware,
         tenantMutationRateLimitMiddleware,
         tenantEndpointClassRateLimitAndQuotaMiddleware,
