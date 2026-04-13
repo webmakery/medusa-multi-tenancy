@@ -2,7 +2,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 
 import { TENANT_MANAGEMENT_MODULE } from '../../../../modules/tenant-management';
 import TenantManagementModuleService from '../../../../modules/tenant-management/service';
-import { resolveAuthenticatedTenantAccess } from '../../_shared/tenant-access';
+import { requireTenantRole, resolveAuthenticatedTenantAccess } from '../../_shared/tenant-access';
 
 interface UpdateStoreSettingsBody {
   store_name?: string;
@@ -36,6 +36,17 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 }
 
 export async function PUT(req: MedusaRequest, res: MedusaResponse) {
+  const tenantAccess = await resolveAuthenticatedTenantAccess(req);
+
+  if (tenantAccess.error) {
+    return res.status(tenantAccess.error.status).json({ message: tenantAccess.error.message });
+  }
+
+  const roleCheck = requireTenantRole(tenantAccess, ['owner', 'admin']);
+  if (!roleCheck.ok) {
+    return res.status(roleCheck.status).json({ message: roleCheck.message });
+  }
+
   const body = (req.body || {}) as UpdateStoreSettingsBody;
 
   if (!body.store_name?.trim()) {

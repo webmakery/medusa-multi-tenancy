@@ -9,9 +9,9 @@ import AuditLogModuleService from '../audit-log/service';
 import TenantInvitation from './models/tenant-invitation';
 import TenantMembership from './models/tenant-membership';
 
-export type TenantRole = 'owner' | 'admin' | 'staff';
+export type TenantRole = 'owner' | 'admin' | 'member' | 'viewer';
 
-const ALLOWED_ROLES: TenantRole[] = ['owner', 'admin', 'staff'];
+const ALLOWED_ROLES: TenantRole[] = ['owner', 'admin', 'member', 'viewer'];
 
 class TenantManagementModuleService extends MedusaService({
   TenantMembership,
@@ -22,11 +22,17 @@ class TenantManagementModuleService extends MedusaService({
   }
 
   private normalizeRole(role?: string): TenantRole {
-    if (!role || !ALLOWED_ROLES.includes(role as TenantRole)) {
-      return 'staff';
+    const normalizedRole = role?.trim().toLowerCase();
+
+    if (normalizedRole === 'staff') {
+      return 'member';
     }
 
-    return role as TenantRole;
+    if (!normalizedRole || !ALLOWED_ROLES.includes(normalizedRole as TenantRole)) {
+      return 'member';
+    }
+
+    return normalizedRole as TenantRole;
   }
 
   private getAuditLogService(): AuditLogModuleService {

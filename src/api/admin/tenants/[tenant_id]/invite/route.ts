@@ -7,7 +7,7 @@ import { authorizeTenantAction } from '../../_shared/authorization';
 
 interface InviteBody {
   email?: string;
-  role?: 'owner' | 'admin' | 'staff';
+  role?: 'owner' | 'admin' | 'member' | 'viewer' | 'staff';
   invited_by?: string;
   expires_in_days?: number;
 }

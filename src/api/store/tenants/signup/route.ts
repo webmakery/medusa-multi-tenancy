@@ -130,11 +130,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         auth_identity_id: authRegistration.authIdentity.id,
         app_metadata: {
           user_id: ownerUser.id,
+          active_tenant_id: result.tenant.tenant_id,
+          tenant_role: 'owner',
         },
         user_metadata: {
           email: ownerEmail,
           tenant_id: result.tenant.tenant_id,
+          active_tenant_id: result.tenant.tenant_id,
           tenant_slug: result.tenant.slug,
+          tenant_role: 'owner',
         },
       },
       {

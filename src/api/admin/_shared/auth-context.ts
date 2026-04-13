@@ -51,3 +51,21 @@ export function getActiveTenantIdFromAuthContext(req: MedusaRequest): string | n
     null
   );
 }
+
+export function getTenantRoleFromAuthContext(req: MedusaRequest): string | null {
+  const authContext = (req as any).auth_context;
+
+  const roleCandidates = [
+    authContext?.app_metadata?.tenant_role,
+    authContext?.auth_identity?.app_metadata?.tenant_role,
+    authContext?.user_metadata?.tenant_role,
+  ];
+
+  for (const role of roleCandidates) {
+    if (typeof role === 'string' && role.trim()) {
+      return role.trim().toLowerCase();
+    }
+  }
+
+  return null;
+}
