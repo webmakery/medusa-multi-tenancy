@@ -25,7 +25,9 @@
     "test:rls-patch": "NODE_OPTIONS=--experimental-vm-modules jest integration-tests/http/tenant-context/rls-patch.spec.ts --forceExit",
     "test:rls-customers": "NODE_OPTIONS=--experimental-vm-modules jest integration-tests/http/tenant-context/rls-customers-api.spec.ts --forceExit",
     "test:rls-products": "NODE_OPTIONS=--experimental-vm-modules jest integration-tests/http/tenant-context/rls-products-api.spec.ts --forceExit",
-    "lint:tenant-scope": "node ./scripts/check-tenant-scope.js"
+    "lint:tenant-scope": "node ./scripts/check-tenant-scope.js",
+    "migration:backfill:capture": "node ./scripts/backfill-capture-baseline.js",
+    "migration:backfill:validate": "node ./scripts/backfill-validate.js"
   },
   "dependencies": {
     "@medusajs/admin-sdk": "2.13.6",
