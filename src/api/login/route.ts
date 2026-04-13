@@ -85,3 +85,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     redirect_to: redirectTo,
   });
 }
+
+export async function GET(_req: MedusaRequest, res: MedusaResponse) {
+  return res.redirect(302, '/app/login');
+}
