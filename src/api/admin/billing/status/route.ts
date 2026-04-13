@@ -48,15 +48,42 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   if (action === 'renew' || action === 'payment_recovered') {
+    const before = await billingService.getBillingOverview(tenantAccess.tenantId!);
     const billing = await billingService.processRenewal(tenantAccess.tenantId!);
+    await billingService.recordAdminBillingAction({
+      tenant_id: tenantAccess.tenantId!,
+      actor: tenantAccess.actorEmail,
+      action,
+      before_status: before?.account?.status || null,
+      after_status: billing?.account?.status || null,
+      plan_code: billing?.account?.plan_code || null,
+    });
     return res.status(200).json({ billing });
   }
 
   if (action === 'payment_failed') {
+    const before = await billingService.getBillingOverview(tenantAccess.tenantId!);
     const billing = await billingService.markPaymentFailed(tenantAccess.tenantId!);
+    await billingService.recordAdminBillingAction({
+      tenant_id: tenantAccess.tenantId!,
+      actor: tenantAccess.actorEmail,
+      action,
+      before_status: before?.account?.status || null,
+      after_status: billing?.account?.status || null,
+      plan_code: billing?.account?.plan_code || null,
+    });
     return res.status(200).json({ billing });
   }
 
+  const before = await billingService.getBillingOverview(tenantAccess.tenantId!);
   const billing = await billingService.applyLifecycleTransitions(tenantAccess.tenantId!);
+  await billingService.recordAdminBillingAction({
+    tenant_id: tenantAccess.tenantId!,
+    actor: tenantAccess.actorEmail,
+    action,
+    before_status: before?.account?.status || null,
+    after_status: billing?.status || null,
+    plan_code: before?.account?.plan_code || null,
+  });
   return res.status(200).json({ billing });
 }

@@ -4,6 +4,8 @@ import type { Knex } from 'knex';
 
 import { ContainerRegistrationKeys, MedusaService } from '@medusajs/framework/utils';
 
+import { AUDIT_LOG_MODULE } from '../audit-log';
+import AuditLogModuleService from '../audit-log/service';
 import TenantBillingAccount from './models/tenant-billing-account';
 import TenantBillingEntitlement from './models/tenant-billing-entitlement';
 import TenantBillingMeterEvent from './models/tenant-billing-meter-event';
@@ -20,6 +22,10 @@ class BillingModuleService extends MedusaService({
 }) {
   private getKnex(): Knex {
     return (this as any).__container__.resolve(ContainerRegistrationKeys.PG_CONNECTION) as Knex;
+  }
+
+  private getAuditLogService(): AuditLogModuleService {
+    return (this as any).__container__.resolve(AUDIT_LOG_MODULE) as AuditLogModuleService;
   }
 
   private computePeriodStart(date = new Date()) {
@@ -294,6 +300,28 @@ class BillingModuleService extends MedusaService({
         grace_period_to_active: 'Payment succeeds during grace and account renews.',
       },
     };
+  }
+
+  async recordAdminBillingAction(input: {
+    tenant_id: string;
+    actor?: string;
+    action: 'renew' | 'payment_failed' | 'payment_recovered' | 'expire_grace';
+    before_status?: TenantBillingStatus | null;
+    after_status?: TenantBillingStatus | null;
+    plan_code?: string | null;
+  }) {
+    await this.getAuditLogService().recordEvent({
+      actor: input.actor || 'system',
+      tenant_id: input.tenant_id,
+      action: 'billing_status_changed',
+      resource_id: input.tenant_id,
+      payload: {
+        billing_action: input.action,
+        before_status: input.before_status || null,
+        after_status: input.after_status || null,
+        plan_code: input.plan_code || null,
+      },
+    });
   }
 }
 
