@@ -1,0 +1,111 @@
+version: 1
+telemetry:
+  stream: tenant_metric_http_request
+  required_labels:
+    - tenant_id
+    - endpoint_class
+    - method
+    - status_code
+  required_dimensions:
+    - trace_id
+    - span_id
+    - correlation_id
+  pii_controls:
+    forbidden_fields:
+      - actor_email
+      - ip
+    allowed_pseudonymous_fields:
+      - actor_hash
+      - ip_hash
+
+dashboards:
+  - name: tenant-health-latency
+    description: Per-tenant latency and saturation.
+    panels:
+      - title: p95 latency by tenant
+        query: "p95(duration_ms) by tenant_id"
+      - title: p99 reporting latency
+        query: "p99(duration_ms{endpoint_class='reporting'}) by tenant_id"
+  - name: tenant-health-errors
+    description: Per-tenant failures and error budget burn.
+    panels:
+      - title: error rate by tenant
+        query: "sum(status_code>=400)/count(*) by tenant_id"
+      - title: 5xx rate by tenant
+        query: "sum(status_code>=500)/count(*) by tenant_id"
+  - name: tenant-health-queue-lag
+    description: Queue lag and backlog by tenant.
+    panels:
+      - title: queue lag p95 by tenant
+        query: "p95(tenant_queue_lag_ms) by tenant_id"
+      - title: queue depth by tenant
+        query: "max(tenant_queue_depth) by tenant_id,queue_name"
+  - name: tenant-health-usage-saturation
+    description: Quota and throttle saturation trends.
+    panels:
+      - title: soft quota saturation
+        query: "max(usage_count/soft_quota) by tenant_id,endpoint_class"
+      - title: hard quota saturation
+        query: "max(usage_count/hard_quota) by tenant_id,endpoint_class"
+      - title: throttle rejects
+        query: "count(status_code=429) by tenant_id,endpoint_class"
+
+alerts:
+  - id: tenant-leakage-auth-mismatch
+    source_event: tenant_leakage_auth_mismatch
+    condition: ">= 1 events in 5m"
+    severity: critical
+    notify: oncall-primary
+  - id: tenant-leakage-cross-tenant-pattern
+    source_event: tenant_leakage_cross_tenant_pattern
+    condition: ">= 3 events for same actor_hash in 10m"
+    severity: high
+    notify: security-oncall
+  - id: tenant-abuse-high-error-rate
+    source_event: tenant_abuse_high_error_rate
+    condition: "error_rate >= 0.35 and window_total_requests >= 20"
+    severity: high
+    notify: oncall-primary
+  - id: tenant-abuse-sudden-spike
+    source_event: tenant_abuse_sudden_spike
+    condition: ">= 1 event in 5m"
+    severity: medium
+    notify: oncall-primary
+
+slos:
+  - operation: login
+    selector:
+      endpoint_class: auth
+    objectives:
+      - metric: availability
+        target: "99.9%"
+        window: 30d
+        success_definition: status_code < 500
+      - metric: latency
+        target: "95% <= 400ms"
+        window: 30d
+  - operation: create_update
+    selector:
+      endpoint_class: write-heavy
+    objectives:
+      - metric: availability
+        target: "99.5%"
+        window: 30d
+        success_definition: status_code < 500
+      - metric: latency
+        target: "95% <= 800ms"
+        window: 30d
+  - operation: reporting
+    selector:
+      endpoint_class: reporting
+    objectives:
+      - metric: availability
+        target: "99.0%"
+        window: 30d
+        success_definition: status_code < 500
+      - metric: latency
+        target: "95% <= 2000ms"
+        window: 30d
+      - metric: latency
+        target: "99% <= 5000ms"
+        window: 30d

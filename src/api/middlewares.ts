@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import type { MedusaNextFunction, MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { defineMiddlewares } from '@medusajs/framework/http';
 
+import { getActiveTenantIdFromAuthContext, getActorEmail } from './admin/_shared/auth-context';
 import { tenantContextMiddleware, tenantContextStorage } from '../modules/tenant-context/middleware';
 
 const CORRELATION_ID_HEADER = 'x-correlation-id';
@@ -128,6 +129,23 @@ const tenantEndpointClassAbuseBuckets = new Map<string, AbuseSpikeBucket>();
 const tenantErrorRateBuckets = new Map<string, ErrorRateBucket>();
 const quotaAlertDeduplication = new Set<string>();
 const abuseAlertDeduplication = new Set<string>();
+const potentialLeakageDeduplication = new Set<string>();
+const actorTenantPatternWindow = new Map<string, { tenantId: string; updatedAt: number }>();
+const LEAKAGE_PATTERN_WINDOW_MS = 2 * 60 * 1000;
+
+function pseudonymize(value: string | undefined | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+
+  return `h_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
 
 function parseTenantLimitOverrides(): Record<string, Partial<Record<EndpointClass, TenantClassOverride>>> {
   const rawValue = process.env.TENANT_LIMIT_OVERRIDES;
@@ -162,6 +180,23 @@ function normalizeHeaderValue(value: string | string[] | undefined): string | un
   }
 
   return value;
+}
+
+function parseTraceParent(traceParentHeader: string | undefined): { trace_id?: string; span_id?: string } {
+  if (!traceParentHeader) {
+    return {};
+  }
+
+  const match = traceParentHeader.trim().match(/^[\da-f]{2}-([\da-f]{32})-([\da-f]{16})-[\da-f]{2}$/i);
+
+  if (!match) {
+    return {};
+  }
+
+  return {
+    trace_id: match[1],
+    span_id: match[2],
+  };
 }
 
 function getClientIp(req: MedusaRequest): string {
@@ -220,6 +255,12 @@ function rateLimitCleanup(now: number) {
   for (const [key, bucket] of tenantErrorRateBuckets.entries()) {
     if (bucket.resetAt <= now) {
       tenantErrorRateBuckets.delete(key);
+    }
+  }
+
+  for (const [key, value] of actorTenantPatternWindow.entries()) {
+    if (value.updatedAt + LEAKAGE_PATTERN_WINDOW_MS <= now) {
+      actorTenantPatternWindow.delete(key);
     }
   }
 }
@@ -422,12 +463,12 @@ function tenantEndpointClassRateLimitAndQuotaMiddleware(
       JSON.stringify({
         level: 'warn',
         event: 'tenant_usage_alert_threshold_reached',
-        tenantId,
-        endpointClass,
-        usageCount,
-        alertThreshold,
-        softQuota: classConfig.softQuotaPerHour,
-        hardQuota: classConfig.hardQuotaPerHour,
+        tenant_id: tenantId,
+        endpoint_class: endpointClass,
+        usage_count: usageCount,
+        alert_threshold: alertThreshold,
+        soft_quota: classConfig.softQuotaPerHour,
+        hard_quota: classConfig.hardQuotaPerHour,
       })
     );
   }
@@ -477,11 +518,11 @@ function tenantEndpointClassRateLimitAndQuotaMiddleware(
         JSON.stringify({
           level: 'error',
           event: 'tenant_abuse_sudden_spike',
-          tenantId,
-          endpointClass,
-          currentWindowCount: abuseBucket.count,
-          previousWindowCount: abuseBucket.previousCount,
-          spikeThreshold,
+          tenant_id: tenantId,
+          endpoint_class: endpointClass,
+          current_window_count: abuseBucket.count,
+          previous_window_count: abuseBucket.previousCount,
+          spike_threshold: spikeThreshold,
         })
       );
     }
@@ -519,36 +560,103 @@ function structuredErrorLoggingMiddleware(req: MedusaRequest, res: MedusaRespons
             JSON.stringify({
               level: 'error',
               event: 'tenant_abuse_high_error_rate',
-              tenantId,
-              endpointClass,
-              windowTotalRequests: errorRateBucket.total,
-              windowErroredRequests: errorRateBucket.errors,
-              errorRate,
+              tenant_id: tenantId,
+              endpoint_class: endpointClass,
+              window_total_requests: errorRateBucket.total,
+              window_errored_requests: errorRateBucket.errors,
+              error_rate: errorRate,
             })
           );
         }
       }
     }
 
+    const durationMs = Date.now() - startedAt;
+    const correlationId = normalizeHeaderValue(req.headers[CORRELATION_ID_HEADER]);
+    const traceParent = normalizeHeaderValue(req.headers.traceparent);
+    const traceContext = parseTraceParent(traceParent);
+    const actorHash = pseudonymize(getActorEmail(req));
+    const clientIpHash = pseudonymize(getClientIp(req));
+    const authTenantId = getActiveTenantIdFromAuthContext(req);
+    const pathname = (req.path || req.originalUrl || '').split('?')[0];
+
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        event: 'tenant_metric_http_request',
+        tenant_id: tenantId,
+        endpoint_class: endpointClass,
+        method: req.method,
+        path: pathname,
+        status_code: res.statusCode,
+        duration_ms: durationMs,
+        correlation_id: correlationId,
+        actor_hash: actorHash,
+        ip_hash: clientIpHash,
+        ...traceContext,
+      })
+    );
+
+    if (authTenantId && authTenantId !== tenantId) {
+      const authMismatchKey = `${actorHash || 'unknown'}:${tenantId}:${authTenantId}:auth-mismatch`;
+      if (!potentialLeakageDeduplication.has(authMismatchKey)) {
+        potentialLeakageDeduplication.add(authMismatchKey);
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            event: 'tenant_leakage_auth_mismatch',
+            tenant_id: tenantId,
+            auth_tenant_id: authTenantId,
+            endpoint_class: endpointClass,
+            correlation_id: correlationId,
+            actor_hash: actorHash,
+            ...traceContext,
+          })
+        );
+      }
+    }
+
+    if (actorHash) {
+      const priorPattern = actorTenantPatternWindow.get(actorHash);
+      if (priorPattern && priorPattern.tenantId !== tenantId && now - priorPattern.updatedAt <= LEAKAGE_PATTERN_WINDOW_MS) {
+        const crossTenantKey = `${actorHash}:${priorPattern.tenantId}:${tenantId}`;
+        if (!potentialLeakageDeduplication.has(crossTenantKey)) {
+          potentialLeakageDeduplication.add(crossTenantKey);
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              event: 'tenant_leakage_cross_tenant_pattern',
+              tenant_id: tenantId,
+              previous_tenant_id: priorPattern.tenantId,
+              endpoint_class: endpointClass,
+              correlation_id: correlationId,
+              actor_hash: actorHash,
+              ...traceContext,
+            })
+          );
+        }
+      }
+      actorTenantPatternWindow.set(actorHash, { tenantId, updatedAt: now });
+    }
+
     if (res.statusCode < 400) {
       return;
     }
-
-    const durationMs = Date.now() - startedAt;
-    const correlationId = normalizeHeaderValue(req.headers[CORRELATION_ID_HEADER]);
 
     console.error(
       JSON.stringify({
         level: res.statusCode >= 500 ? 'error' : 'warn',
         event: 'api_response',
-        statusCode: res.statusCode,
+        status_code: res.statusCode,
         method: req.method,
-        path: req.originalUrl,
-        tenantId,
-        endpointClass,
-        ip: getClientIp(req),
-        correlationId,
-        durationMs,
+        path: pathname,
+        tenant_id: tenantId,
+        endpoint_class: endpointClass,
+        ip_hash: clientIpHash,
+        correlation_id: correlationId,
+        duration_ms: durationMs,
+        actor_hash: actorHash,
+        ...traceContext,
       })
     );
   });
