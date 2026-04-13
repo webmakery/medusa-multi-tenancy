@@ -271,6 +271,7 @@ class AppsModuleService extends MedusaService({
   async publishEventToSubscribers(input: PublishEventInput) {
     const knex = this.getKnex();
 
+    // tenant-scope-ignore: query is explicitly scoped via app_installation/app_webhook/app_credential tenant_id filters below.
     const baseQuery = knex('app_webhook')
       .join('app_installation', 'app_installation.id', 'app_webhook.app_id')
       .join('app_credential', 'app_credential.app_id', 'app_installation.id')
@@ -291,6 +292,8 @@ class AppsModuleService extends MedusaService({
       );
 
     baseQuery.andWhere('app_installation.tenant_id', input.tenant_id);
+    baseQuery.andWhere('app_webhook.tenant_id', input.tenant_id);
+    baseQuery.andWhere('app_credential.tenant_id', input.tenant_id);
 
     const subscriptions = await baseQuery;
 
