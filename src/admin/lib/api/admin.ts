@@ -39,9 +39,26 @@ export interface OnboardingChecklistItem {
 
 export interface OnboardingFunnel {
   signup_completed: boolean;
+  email_verified?: boolean;
+  tenant_created?: boolean;
+  owner_assigned?: boolean;
+  first_project_setup_completed?: boolean;
   team_invited: boolean;
   first_value_action_completed: boolean;
   first_value_at?: string | null;
+  steps?: Array<{
+    key: string;
+    label: string;
+    completed_count: number;
+    conversion_rate: number;
+    dropped_count: number;
+    alert: 'ok' | 'warning';
+  }>;
+  drop_off_alerts?: Array<{
+    key: string;
+    severity: 'warning' | 'critical';
+    detail: string;
+  }>;
 }
 
 export interface OnboardingDiagnostic {

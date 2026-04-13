@@ -1,9 +1,12 @@
-import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys, Modules, generateJwtToken } from '@medusajs/framework/utils';
-import type { IAuthModuleService } from '@medusajs/types';
-import { createUserAccountWorkflow } from '@medusajs/medusa/core-flows';
+import { createHash, randomUUID } from 'crypto';
 
-import createTenantOnboardingWorkflow from '../../../../workflows/tenant/create-tenant';
+import type { Knex } from 'knex';
+
+import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
+import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+
+import { ANALYTICS_MODULE } from '../../../../modules/analytics';
+import AnalyticsModuleService from '../../../../modules/analytics/service';
 
 interface SignupBody {
   name?: string;
@@ -12,7 +15,6 @@ interface SignupBody {
   password?: string;
   first_name?: string;
   last_name?: string;
-  redirect_to?: string;
 }
 
 const SLUG_MAX_LENGTH = 60;
@@ -24,36 +26,6 @@ function slugify(input: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, SLUG_MAX_LENGTH);
-}
-
-function getSafeRedirectPath(path?: string): string {
-  if (!path || typeof path !== 'string') {
-    return '/app';
-  }
-
-  const normalized = path.trim();
-
-  if (!normalized.startsWith('/') || normalized.startsWith('//')) {
-    return '/app';
-  }
-
-  return normalized;
-}
-
-function getAuthCookieDomain(req: MedusaRequest): string | undefined {
-  const host = (req.headers.host || '').toString().split(':')[0].trim().toLowerCase();
-
-  if (!host || host === 'localhost' || /^[0-9.]+$/.test(host)) {
-    return undefined;
-  }
-
-  const segments = host.split('.').filter(Boolean);
-
-  if (segments.length < 2) {
-    return undefined;
-  }
-
-  return `.${segments.slice(-2).join('.')}`;
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -80,97 +52,69 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const ownerEmail = body.email.trim().toLowerCase();
 
   try {
-    const { result } = await createTenantOnboardingWorkflow(req.scope).run({
-      input: {
-        name: body.name.trim(),
-        slug,
+    const knex = req.scope.resolve<Knex>(ContainerRegistrationKeys.PG_CONNECTION);
+    const analyticsService = req.scope.resolve<AnalyticsModuleService>(ANALYTICS_MODULE);
+    const verificationToken = randomUUID();
+    const verificationTokenHash = createHash('sha256').update(verificationToken).digest('hex');
+    const sessionId = randomUUID();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+    await knex('tenant_signup_session')
+      .insert({
+        id: sessionId,
+        tenant_name: body.name.trim(),
+        tenant_slug: slug,
         owner_email: ownerEmail,
-      },
-      context: {
-        idempotencyKey: `store-tenant-signup:${slug}:${ownerEmail}`,
-      },
-    });
+        password_secret: body.password.trim(),
+        first_name: body.first_name?.trim() || null,
+        last_name: body.last_name?.trim() || null,
+        verification_token_hash: verificationTokenHash,
+        verification_expires_at: expiresAt.toISOString(),
+        current_step: 'signup_submitted',
+      })
+      .onConflict('owner_email')
+      .merge({
+        tenant_name: body.name.trim(),
+        tenant_slug: slug,
+        password_secret: body.password.trim(),
+        first_name: body.first_name?.trim() || null,
+        last_name: body.last_name?.trim() || null,
+        verification_token_hash: verificationTokenHash,
+        verification_expires_at: expiresAt.toISOString(),
+        current_step: 'signup_submitted',
+        updated_at: knex.fn.now(),
+      });
 
-    const authService = req.scope.resolve(Modules.AUTH) as IAuthModuleService;
-    const authRegistration = await authService.register('emailpass', {
-      url: req.url,
-      headers: req.headers as Record<string, string>,
-      query: req.query as Record<string, string>,
-      body: {
-        email: ownerEmail,
-        password: body.password.trim(),
-      },
-      protocol: req.protocol,
-    });
-
-    if (!authRegistration.success || !authRegistration.authIdentity?.id) {
-      throw new Error(authRegistration.error || 'Failed to create auth identity for owner.');
-    }
-
-    const { result: ownerUser } = await createUserAccountWorkflow(req.scope).run({
-      input: {
-        authIdentityId: authRegistration.authIdentity.id,
-        userData: {
-          email: ownerEmail,
-          first_name: body.first_name?.trim() || body.name.trim(),
-          last_name: body.last_name?.trim() || undefined,
-        },
+    await analyticsService.recordEvent({
+      tenant_id: sessionId,
+      event_type: 'session_started',
+      metadata: {
+        channel: 'tenant_signup',
+        campaign: 'signup_submitted',
+        actor_hash: createHash('sha256').update(ownerEmail).digest('hex').slice(0, 16),
       },
     });
 
-    const configModule = req.scope.resolve(ContainerRegistrationKeys.CONFIG_MODULE) as any;
-    const jwtSecret = configModule.projectConfig.http.jwtSecret;
-    const jwtExpiresIn = configModule.projectConfig.http.jwtExpiresIn;
-    const jwtOptions = configModule.projectConfig.http.jwtOptions;
-
-    const token = generateJwtToken(
-      {
-        actor_id: ownerUser.id,
-        actor_type: 'user',
-        auth_identity_id: authRegistration.authIdentity.id,
-        app_metadata: {
-          user_id: ownerUser.id,
-          active_tenant_id: result.tenant.tenant_id,
-          tenant_role: 'owner',
-        },
-        user_metadata: {
-          email: ownerEmail,
-          tenant_id: result.tenant.tenant_id,
-          active_tenant_id: result.tenant.tenant_id,
-          tenant_slug: result.tenant.slug,
-          tenant_role: 'owner',
-        },
+    return res.status(200).json({
+      status: 'verification_required',
+      session_id: sessionId,
+      verification: {
+        token: verificationToken,
+        expires_at: expiresAt.toISOString(),
       },
-      {
-        secret: jwtSecret,
-        expiresIn: jwtExpiresIn,
-        jwtOptions,
-      }
-    );
-
-    const cookieDomain = getAuthCookieDomain(req);
-
-    res.cookie('medusa_auth_token', token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-      domain: cookieDomain,
+      next_step: 'verify_email',
+      checklist: [
+        { key: 'signup_submitted', label: 'Sign up', is_completed: true },
+        { key: 'email_verified', label: 'Verify your email', is_completed: false },
+        { key: 'tenant_created', label: 'Create your workspace', is_completed: false },
+        { key: 'owner_assigned', label: 'Assign owner access', is_completed: false },
+        { key: 'first_project_setup', label: 'Set up your first project', is_completed: false },
+      ],
     });
-
-    const redirectPath = getSafeRedirectPath(body.redirect_to);
-    const redirectUrl = `${redirectPath}${redirectPath.includes('?') ? '&' : '?'}tenant=${encodeURIComponent(
-      result.tenant.slug
-    )}`;
-
-    return res.redirect(303, redirectUrl);
   } catch (error: any) {
     if (error.message?.includes('already exists')) {
       return res.status(409).json({ message: error.message });
-    }
-
-    if (error.message?.toLowerCase().includes('password')) {
-      return res.status(400).json({ message: error.message });
     }
 
     throw error;
