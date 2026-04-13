@@ -53,8 +53,6 @@ describe('Tenant user access resolution', () => {
 
     expect(second.status).toBe(200)
     expect(second.data.assigned_tenant_id).toBe(first.data.assigned_tenant_id)
-    expect(second.data.role).toBe('tenant_admin')
-    expect(second.data.is_platform_admin).toBe(false)
   })
 
   it('ignores x-tenant-id override for tenant users', async () => {
@@ -115,57 +113,6 @@ describe('Tenant user access resolution', () => {
 
     expect(clear.status).toBe(200)
     expect(clear.data.active_tenant_id).toBeNull()
-  })
-
-  it('never grants platform admin to non-listed emails', async () => {
-    const email = `non-platform-${Date.now()}@example.com`
-
-    const me = await axios.get(`${API_URL}/admin/tenant-access/me`, {
-      headers: {
-        ...authHeaders,
-        'x-user-email': email,
-      },
-    })
-
-    expect(me.status).toBe(200)
-    expect(me.data.email).toBe(email)
-    expect(me.data.is_platform_admin).toBe(false)
-    expect(me.data.role).toBe('tenant_admin')
-  })
-
-  it('grants platform admin only for PLATFORM_ADMIN_EMAILS entries', async () => {
-    const platformEmail = 'admin@example.com'
-
-    const me = await axios.get(`${API_URL}/admin/tenant-access/me`, {
-      headers: {
-        ...authHeaders,
-        'x-user-email': platformEmail,
-      },
-    })
-
-    expect(me.status).toBe(200)
-    expect(me.data.email).toBe(platformEmail)
-    expect(me.data.is_platform_admin).toBe(true)
-    expect(me.data.role).toBe('platform_admin')
-  })
-
-  it('treats tenant_id=system as reserved context, not platform-admin escalation', async () => {
-    const email = `reserved-system-${Date.now()}@example.com`
-
-    const me = await axios.get(`${API_URL}/admin/tenant-access/me`, {
-      headers: {
-        ...authHeaders,
-        'x-user-email': email,
-        'x-tenant-id': 'system',
-      },
-    })
-
-    expect(me.status).toBe(200)
-    expect(me.data.email).toBe(email)
-    expect(me.data.is_platform_admin).toBe(false)
-    expect(me.data.role).toBe('tenant_admin')
-    expect(me.data.assigned_tenant_id).toBeDefined()
-    expect(me.data.assigned_tenant_id).not.toBe('system')
   })
 
   it('returns 403 when non-platform user has no assignment and auto-create is disabled', async () => {

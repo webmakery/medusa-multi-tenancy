@@ -5,21 +5,13 @@ export function getTenantIdFromRequest(req: MedusaRequest): string | null {
   const fromHeader = req.headers['x-tenant-id'];
 
   if (typeof fromHeader === 'string' && fromHeader.trim()) {
-    const normalized = fromHeader.trim();
-    if (normalized.toLowerCase() === 'system') {
-      return null;
-    }
-    return normalized;
+    return fromHeader.trim();
   }
 
   const fromQuery = req.query?.tenant_id;
 
   if (typeof fromQuery === 'string' && fromQuery.trim()) {
-    const normalized = fromQuery.trim();
-    if (normalized.toLowerCase() === 'system') {
-      return null;
-    }
-    return normalized;
+    return fromQuery.trim();
   }
 
   const fromAuthContext = getActiveTenantIdFromAuthContext(req);
