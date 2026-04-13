@@ -27,7 +27,8 @@
     "test:rls-products": "NODE_OPTIONS=--experimental-vm-modules jest integration-tests/http/tenant-context/rls-products-api.spec.ts --forceExit",
     "lint:tenant-scope": "node ./scripts/check-tenant-scope.js",
     "migration:backfill:capture": "node ./scripts/backfill-capture-baseline.js",
-    "migration:backfill:validate": "node ./scripts/backfill-validate.js"
+    "migration:backfill:validate": "node ./scripts/backfill-validate.js",
+    "security:validate-controls": "node ./scripts/validate-security-controls.js"
   },
   "dependencies": {
     "@medusajs/admin-sdk": "2.13.6",
