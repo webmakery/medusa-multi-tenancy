@@ -1,0 +1,18 @@
+diff --git a/node_modules/@medusajs/dashboard/dist/app.js b/node_modules/@medusajs/dashboard/dist/app.js
+--- a/node_modules/@medusajs/dashboard/dist/app.js
++++ b/node_modules/@medusajs/dashboard/dist/app.js
+@@ -99166,9 +99166,13 @@ var init_protected_route = __esm({
+       if (isLoading) {
+         return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "flex min-h-screen items-center justify-center", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(import_icons3.Spinner, { className: "text-ui-fg-interactive animate-spin" }) });
+       }
+-      if (!user) {
++      const isPublicExtensionRoute = location.pathname === "/signup";
++      if (!user && !isPublicExtensionRoute) {
+         return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(import_react_router_dom4.Navigate, { to: "/login", state: { from: location }, replace: true });
+       }
++      if (isPublicExtensionRoute) {
++        return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(import_react_router_dom4.Outlet, {});
++      }
+       return /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(SidebarProvider, { children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(SearchProvider, { children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(import_react_router_dom4.Outlet, {}) }) });
+     };
+   }
