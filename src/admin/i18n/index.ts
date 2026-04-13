@@ -266,6 +266,12 @@ const en = {
         title: 'Tenant registration',
         description: 'Create your tenant account to begin setup.',
         action: 'Create account',
+        errors: {
+          required: 'Please fill in all required fields.',
+          signup: 'Could not create your signup session. Please try again.',
+          verify: 'Could not complete account verification. Please try again.',
+          network: 'Something went wrong while creating your account. Please try again.',
+        },
       },
     },
     billing: {
