@@ -57,6 +57,7 @@ class AnalyticsModuleService extends MedusaService({
   async aggregatePendingEvents() {
     const knex = this.getKnex();
 
+    // tenant-scope-ignore: background rollup worker intentionally processes pending rows across all tenants.
     const pending = await knex('analytics_event')
       .select('tenant_id', 'event_date')
       .whereNull('processed_at')

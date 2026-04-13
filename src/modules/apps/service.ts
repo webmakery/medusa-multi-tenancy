@@ -225,6 +225,7 @@ class AppsModuleService extends MedusaService({
   async verifyInboundWebhook(appId: string, rawBody: string, signature: string) {
     const knex = this.getKnex();
 
+    // tenant-scope-ignore: inbound route authenticates by app_id signature, tenant_id not available at this stage.
     const credential = await knex('app_credential').where({ app_id: appId, is_active: true }).orderBy('created_at', 'desc').first();
 
     if (!credential) {
@@ -247,6 +248,7 @@ class AppsModuleService extends MedusaService({
   async publishEventToSubscribers(input: PublishEventInput) {
     const knex = this.getKnex();
 
+    // tenant-scope-ignore: query is optionally scoped when tenant_id is supplied, otherwise fan-out is intentional.
     const baseQuery = knex('app_webhook')
       .join('app_installation', 'app_installation.id', 'app_webhook.app_id')
       .join('app_credential', 'app_credential.app_id', 'app_installation.id')
