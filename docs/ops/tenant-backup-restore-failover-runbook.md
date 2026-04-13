@@ -144,3 +144,4 @@ WHERE oli.tenant_id <> o.tenant_id;
 - [ ] Failover procedure reviewed and approved by on-call teams.
 - [ ] Incident ownership roster populated and on-call coverage confirmed.
 - [ ] Post-restore tenant-boundary integrity checks passed and archived.
+- [ ] Tenant isolation launch validation completed (`docs/ops/tenant-isolation-launch-validation.md`).
