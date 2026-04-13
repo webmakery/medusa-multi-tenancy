@@ -15,6 +15,15 @@ interface OnboardingChecklistItem {
   action_path?: string;
 }
 
+interface FunnelStepMetric {
+  key: string;
+  label: string;
+  completed_count: number;
+  conversion_rate: number;
+  dropped_count: number;
+  alert: 'ok' | 'warning';
+}
+
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const tenantManagementService: TenantManagementModuleService = req.scope.resolve(TENANT_MANAGEMENT_MODULE);
   const tenantAccess = await resolveAuthenticatedTenantAccess(req);
@@ -64,51 +73,119 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     .first();
   const adminMembersCount = Number(adminMembersResult?.count || 0);
   const hasCustomDomain = Boolean(tenant?.slug && String(tenant.slug).includes('.'));
+  const signupSession = await knex('tenant_signup_session').where({ tenant_id: tenantAccess.tenantId! }).first();
+  const signupSubmitted = Boolean(signupSession);
+  const emailVerified = Boolean(signupSession?.email_verified_at);
+  const tenantCreated = Boolean(signupSession?.tenant_created_at);
+  const ownerAssigned = Boolean(signupSession?.owner_assigned_at);
+  const firstProjectSetup = Boolean(signupSession?.first_project_setup_at);
+  const firstStepAt = signupSession?.created_at ? new Date(signupSession.created_at).getTime() : null;
+  const staleWindowMs = 24 * 60 * 60 * 1000;
+  const isStaleOnboarding =
+    Boolean(signupSession) &&
+    !firstProjectSetup &&
+    Boolean(firstStepAt) &&
+    Date.now() - (firstStepAt as number) > staleWindowMs;
 
   const checklist: OnboardingChecklistItem[] = [
     {
-      key: 'signup',
-      label: 'Complete signup',
-      hint: 'Finish account details to unlock setup features.',
-      is_completed: Boolean(tenant?.name),
-      action_label: 'Complete profile',
+      key: 'signup_submitted',
+      label: 'Sign up',
+      hint: 'Create your account and start onboarding.',
+      is_completed: signupSubmitted,
+      action_label: 'Start signup',
       action_path: '/settings/store',
     },
     {
-      key: 'invite_team',
-      label: 'Invite team member',
-      hint: 'Invite at least one teammate so setup does not rely on a single owner.',
-      is_completed: members.length > 1 || acceptedInvitationsCount > 0,
-      action_label: 'Invite team',
+      key: 'email_verified',
+      label: 'Verify email',
+      hint: 'Confirm your email address to continue.',
+      is_completed: emailVerified,
+      action_label: 'Verify email',
+      action_path: '/onboarding-status',
+    },
+    {
+      key: 'tenant_created',
+      label: 'Create workspace',
+      hint: 'Provision your tenant workspace and defaults.',
+      is_completed: tenantCreated,
+      action_label: 'Review workspace',
+      action_path: '/settings/store',
+    },
+    {
+      key: 'owner_assigned',
+      label: 'Assign owner access',
+      hint: 'Ensure owner permissions are active.',
+      is_completed: ownerAssigned,
+      action_label: 'Manage members',
       action_path: '/team-members',
     },
     {
-      key: 'first_value_action',
-      label: 'Complete first value action',
-      hint: 'Track the first completed checkout to verify value delivery.',
-      is_completed: completedCheckoutCount > 0,
-      action_label: 'View analytics',
-      action_path: '/analytics',
-    },
-    {
-      key: 'launch_readiness',
-      label: 'Review launch readiness',
-      hint: 'Validate core setup blockers before launch.',
-      is_completed: salesChannelCount > 0 && pendingWebhookCount > 0 && adminMembersCount > 0,
-      action_label: 'Open diagnostics',
+      key: 'first_project_setup',
+      label: 'Complete first project/site setup',
+      hint: 'Use the setup wizard to configure your first project.',
+      is_completed: firstProjectSetup,
+      action_label: 'Open setup wizard',
       action_path: '/onboarding-status',
     },
   ];
+
+  const completedCounts = checklist.reduce(
+    (acc, item, index) => {
+      acc[index] = item.is_completed ? 1 : 0;
+      return acc;
+    },
+    [] as number[]
+  );
+
+  const funnelSteps: FunnelStepMetric[] = checklist.map((item, index) => {
+    const previousCompleted = index === 0 ? 1 : completedCounts[index - 1];
+    const currentCompleted = completedCounts[index];
+    const conversionRate = previousCompleted > 0 ? currentCompleted / previousCompleted : 0;
+    const droppedCount = Math.max(previousCompleted - currentCompleted, 0);
+
+    return {
+      key: item.key,
+      label: item.label,
+      completed_count: currentCompleted,
+      conversion_rate: Number(conversionRate.toFixed(4)),
+      dropped_count: droppedCount,
+      alert: conversionRate < 0.7 ? 'warning' : 'ok',
+    };
+  });
 
   res.status(200).json({
     count: checklist.length,
     completed: checklist.filter((item) => item.is_completed).length,
     checklist,
     funnel: {
-      signup_completed: checklist.find((item) => item.key === 'signup')?.is_completed ?? false,
-      team_invited: checklist.find((item) => item.key === 'invite_team')?.is_completed ?? false,
-      first_value_action_completed: checklist.find((item) => item.key === 'first_value_action')?.is_completed ?? false,
+      signup_completed: checklist.find((item) => item.key === 'signup_submitted')?.is_completed ?? false,
+      email_verified: checklist.find((item) => item.key === 'email_verified')?.is_completed ?? false,
+      tenant_created: checklist.find((item) => item.key === 'tenant_created')?.is_completed ?? false,
+      owner_assigned: checklist.find((item) => item.key === 'owner_assigned')?.is_completed ?? false,
+      first_project_setup_completed: checklist.find((item) => item.key === 'first_project_setup')?.is_completed ?? false,
+      team_invited: members.length > 1 || acceptedInvitationsCount > 0,
+      first_value_action_completed: completedCheckoutCount > 0,
       first_value_at: latestCompletedCheckout?.event_timestamp || null,
+      steps: funnelSteps,
+      drop_off_alerts: [
+        ...(isStaleOnboarding
+          ? [
+              {
+                key: 'stale_onboarding',
+                severity: 'warning',
+                detail: 'Setup has not completed within 24 hours of signup.',
+              },
+            ]
+          : []),
+        ...funnelSteps
+          .filter((step) => step.alert === 'warning')
+          .map((step) => ({
+            key: `dropoff_${step.key}`,
+            severity: 'warning',
+            detail: `Drop-off detected at ${step.label}.`,
+          })),
+      ],
     },
     diagnostics: [
       {

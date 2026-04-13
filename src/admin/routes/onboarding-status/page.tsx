@@ -104,6 +104,38 @@ const OnboardingStatusPage = () => {
                 </Table.Cell>
               </Table.Row>
               <Table.Row>
+                <Table.Cell>{t('admin.onboarding.funnel.verify')}</Table.Cell>
+                <Table.Cell>
+                  <Badge color={funnel.email_verified ? 'green' : 'orange'} size="2xsmall">
+                    {funnel.email_verified ? 'Completed' : 'Pending'}
+                  </Badge>
+                </Table.Cell>
+              </Table.Row>
+              <Table.Row>
+                <Table.Cell>{t('admin.onboarding.funnel.tenantCreated')}</Table.Cell>
+                <Table.Cell>
+                  <Badge color={funnel.tenant_created ? 'green' : 'orange'} size="2xsmall">
+                    {funnel.tenant_created ? 'Completed' : 'Pending'}
+                  </Badge>
+                </Table.Cell>
+              </Table.Row>
+              <Table.Row>
+                <Table.Cell>{t('admin.onboarding.funnel.ownerAssigned')}</Table.Cell>
+                <Table.Cell>
+                  <Badge color={funnel.owner_assigned ? 'green' : 'orange'} size="2xsmall">
+                    {funnel.owner_assigned ? 'Completed' : 'Pending'}
+                  </Badge>
+                </Table.Cell>
+              </Table.Row>
+              <Table.Row>
+                <Table.Cell>{t('admin.onboarding.funnel.firstProject')}</Table.Cell>
+                <Table.Cell>
+                  <Badge color={funnel.first_project_setup_completed ? 'green' : 'orange'} size="2xsmall">
+                    {funnel.first_project_setup_completed ? 'Completed' : 'Pending'}
+                  </Badge>
+                </Table.Cell>
+              </Table.Row>
+              <Table.Row>
                 <Table.Cell>{t('admin.onboarding.funnel.invite')}</Table.Cell>
                 <Table.Cell>
                   <Badge color={funnel.team_invited ? 'green' : 'orange'} size="2xsmall">
@@ -132,6 +164,20 @@ const OnboardingStatusPage = () => {
                 })
               : t('admin.onboarding.funnel.missingValue')}
           </Text>
+        ) : null}
+        {funnel?.drop_off_alerts?.length ? (
+          <div className="px-6 pb-6">
+            {funnel.drop_off_alerts.map((alert) => (
+              <div key={alert.key} className="mt-2">
+                <Badge color="orange" size="2xsmall">
+                  Action needed
+                </Badge>
+                <Text size="small" className="text-ui-fg-subtle mt-1">
+                  {alert.detail}
+                </Text>
+              </div>
+            ))}
+          </div>
         ) : null}
       </Container>
 
