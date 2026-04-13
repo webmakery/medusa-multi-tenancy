@@ -34,6 +34,10 @@ const TENANT_OPTIONAL_ROUTE_PATTERNS: RegExp[] = [
   /^\/admin\/tenants\/active\/?$/i,
   /^\/admin\/tenants\/invitations\/accept\/?$/i,
   /^\/admin\/auth\//i,
+  /^\/admin\/login\/?$/i,
+  /^\/admin\/signup\/?$/i,
+  /^\/app\/login\/?$/i,
+  /^\/app\/signup\/?$/i,
   /^\/auth\//i,
 ];
 const TENANT_LIFECYCLE_OVERRIDE_ROUTE_PATTERNS: RegExp[] = [
