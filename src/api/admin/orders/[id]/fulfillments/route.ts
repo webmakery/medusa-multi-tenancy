@@ -3,7 +3,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import createOrdersFulfillmentWorkflow, {
   CreateOrderFulfillmentWorkflowInput,
 } from '../../../../../workflows/orders/create-fulfillment';
-import { requireIdempotencyKey } from '../../../../utils/idempotency';
+import { buildTenantScopedIdempotencyKey, requireIdempotencyKey } from '../../../../utils/idempotency';
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const idempotencyKey = requireIdempotencyKey(req, res);
@@ -31,7 +31,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       no_notification: body.no_notification,
     },
     context: {
-      idempotencyKey: `admin-order-fulfillment:${req.params.id}:${idempotencyKey}`,
+      idempotencyKey: buildTenantScopedIdempotencyKey(req, `admin-order-fulfillment:${req.params.id}`, idempotencyKey),
     },
   });
 

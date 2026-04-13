@@ -1,3 +1,4 @@
+import { getTenantIdFromRequest } from '../../../utils/tenant';
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 
 import syncInventoryByLocationWorkflow from '../../../../workflows/sync-inventory-by-location';
@@ -13,6 +14,12 @@ interface AdminSyncInventoryBody {
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  const tenantId = getTenantIdFromRequest(req);
+
+  if (!tenantId) {
+    return res.status(400).json({ message: 'x-tenant-id header (or tenant_id query in development) is required' });
+  }
+
   const body = (req.body || {}) as AdminSyncInventoryBody;
 
   if (!body.location_id?.trim()) {

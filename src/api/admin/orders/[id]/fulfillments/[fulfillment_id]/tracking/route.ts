@@ -3,7 +3,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import updateOrderTrackingWorkflow, {
   UpdateOrderTrackingWorkflowInput,
 } from '../../../../../../../workflows/orders/update-fulfillment-tracking';
-import { requireIdempotencyKey } from '../../../../../../utils/idempotency';
+import { buildTenantScopedIdempotencyKey, requireIdempotencyKey } from '../../../../../../utils/idempotency';
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const idempotencyKey = requireIdempotencyKey(req, res);
@@ -31,7 +31,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       no_notification: body.no_notification,
     },
     context: {
-      idempotencyKey: `admin-order-tracking:${req.params.id}:${req.params.fulfillment_id}:${idempotencyKey}`,
+      idempotencyKey: buildTenantScopedIdempotencyKey(req, `admin-order-tracking:${req.params.id}:${req.params.fulfillment_id}`, idempotencyKey),
     },
   });
 

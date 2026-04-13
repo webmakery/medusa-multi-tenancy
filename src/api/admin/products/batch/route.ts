@@ -1,3 +1,4 @@
+import { getTenantIdFromRequest } from '../../../utils/tenant';
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { CreateProductWorkflowInputDTO, UpdateProductWorkflowInputDTO } from '@medusajs/framework/types';
 
@@ -9,6 +10,12 @@ interface AdminBatchUpsertProductsBody {
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  const tenantId = getTenantIdFromRequest(req);
+
+  if (!tenantId) {
+    return res.status(400).json({ message: 'x-tenant-id header (or tenant_id query in development) is required' });
+  }
+
   const body = (req.body || {}) as AdminBatchUpsertProductsBody;
 
   const create = Array.isArray(body.create) ? body.create : [];

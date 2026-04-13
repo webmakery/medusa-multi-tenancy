@@ -1,7 +1,7 @@
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 
 import { getTenantIdFromRequest } from '../../utils/tenant';
-import { requireIdempotencyKey } from '../../utils/idempotency';
+import { buildTenantScopedIdempotencyKey, requireIdempotencyKey } from '../../utils/idempotency';
 import { APPS_MODULE } from '../../../modules/apps';
 import AppsModuleService from '../../../modules/apps/service';
 import { BILLING_MODULE } from '../../../modules/billing';
@@ -32,8 +32,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const _idempotencyKey = requireIdempotencyKey(req, res);
-  if (!_idempotencyKey) return;
+  const idempotencyKey = requireIdempotencyKey(req, res);
+  if (!idempotencyKey) return;
 
   const tenantId = getTenantIdFromRequest(req);
 
@@ -42,6 +42,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   const body = (req.body || {}) as InstallAppBody;
+  const tenantScopedIdempotencyKey = buildTenantScopedIdempotencyKey(req, 'admin-app-install', idempotencyKey);
 
   if (!body.app_name?.trim() || !body.app_identifier?.trim()) {
     return res.status(400).json({ message: 'app_name and app_identifier are required.' });
@@ -68,6 +69,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     return res.status(201).json({
       message: 'App installed successfully.',
+      idempotency_key: tenantScopedIdempotencyKey,
       app: installed,
     });
   } catch (error: any) {
