@@ -155,6 +155,7 @@ const BillingPage = () => {
 
 export const config = defineRouteConfig({
   label: 'Billing',
+  rank: 30,
 });
 
 export default BillingPage;

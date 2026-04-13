@@ -68,7 +68,8 @@ const TeamMembersPage = () => {
 };
 
 export const config = defineRouteConfig({
-  label: 'Team members',
+  label: 'Users',
+  rank: 20,
 });
 
 export default TeamMembersPage;

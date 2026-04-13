@@ -285,7 +285,6 @@ const OrderOperationsPage = () => {
 };
 
 export const config = defineRouteConfig({
-  label: 'Order operations',
 });
 
 export default OrderOperationsPage;
